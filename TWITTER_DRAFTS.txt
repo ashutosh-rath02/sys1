@@ -48,3 +48,31 @@ More than 2x the accuracy and roughly half the calibration error from a
 few minutes of free-tier fine-tuning on real (not synthetic) data. Same
 tiny 0.5B model, same logit-based probability extraction, just better
 weights. Next: more/bigger training data, then a bigger base model.
+
+===============================================================
+[2026-09-22] Post 5 — data scale-up, same 0.5B model
+===============================================================
+Tripled the training set (600 -> 1600 real examples, same public-dataset
+sources, no synthetic data). Same 0.5B model, retrained:
+accuracy 59.34% -> 63.07%, Brier score 0.55 -> 0.477.
+Smaller jump than the first fine-tune (expected — most of the "free
+lunch" was going from zero-shot to any fine-tune at all), but still a
+real gain from data alone. Next up: same bigger dataset, but on a 1.5B
+base model instead of 0.5B.
+
+===============================================================
+[2026-09-22] Post 6 — 1.5B model beats data scale-up
+===============================================================
+Same 1600-example training set, swapped the base model from 0.5B to
+1.5B. Result: accuracy 63.07% -> 72.20%, Brier score 0.477 -> 0.35.
+
+Full progression so far, same held-out eval each time:
+0.5B zero-shot:        23.08% acc, Brier 1.16
+0.5B + 600 examples:   59.34% acc, Brier 0.55
+0.5B + 1600 examples:  63.07% acc, Brier 0.48
+1.5B + 1600 examples:  72.20% acc, Brier 0.35
+
+At this scale, going from 0.5B -> 1.5B params bought more than tripling
+the dataset did. Small model, small free-tier GPU, real measured gains
+at every step. Next: try 3B, and/or grow the dataset further to see if
+the bigger model has more headroom to use it.
