@@ -31,16 +31,25 @@ st.caption(
 
 with st.sidebar:
     st.header("Model")
-    default_model = (
-        "models/sys1-calibrated-out"
-        if Path("models/sys1-calibrated-out").is_dir()
-        else "models/sys1-lora-out"
-        if Path("models/sys1-lora-out").is_dir()
-        else DEFAULT_MODEL
-    )
-    model_name = st.text_input("Model (base HF id or local adapter path)", value=default_model)
-    st.caption("Any small HF instruct model works, or a local LoRA adapter directory.")
     mode = st.radio("Mode", ["Judgment playground", "Snake game"])
+    if mode == "Snake game":
+        # 0.5B for speed: each tick is a live forward pass on CPU, and the
+        # 1.5B model's per-tick latency makes live play unwatchably slow.
+        default_model = (
+            "models/sys1-lora-out" if Path("models/sys1-lora-out").is_dir() else DEFAULT_MODEL
+        )
+    else:
+        default_model = (
+            "models/sys1-calibrated-out"
+            if Path("models/sys1-calibrated-out").is_dir()
+            else "models/sys1-lora-out"
+            if Path("models/sys1-lora-out").is_dir()
+            else DEFAULT_MODEL
+        )
+    model_name = st.text_input(
+        "Model (base HF id or local adapter path)", value=default_model, key=f"model_input_{mode}"
+    )
+    st.caption("Any small HF instruct model works, or a local LoRA adapter directory.")
 
 engine = load_engine(model_name)
 
