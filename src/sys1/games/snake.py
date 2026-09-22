@@ -1,8 +1,18 @@
-"""Classic arcade Snake: the game engine owns every rule (movement,
-collision, food spawning); the model only answers one Choice judgment per
-tick -- which direction to move -- from structured board state. Same
-pattern as the jev-snake / snake-jev community demos: deterministic
-engine, model makes the one decision that isn't deterministic.
+"""Classic arcade Snake, built around one rule: the model is called only
+for a genuine judgment, never for anything code can already determine.
+
+Memory lives in the game state (game.focus_axis), not in the model:
+- Safety (wall/self-collision) is always fully deterministic.
+- Once we've committed to closing the gap on one axis (x or y), the
+  correct move along that axis is fully deterministic too -- there's
+  no judgment in "should I keep going the direction I already know
+  is right." That commitment persists across ticks in game.focus_axis
+  until that axis is actually closed, which is exactly the "memory" a
+  model without cross-tick state can't provide on its own.
+- The model is asked exactly two kinds of real questions, each genuinely
+  requiring judgment: which axis to prioritize when *both* are open (no
+  structural reason to prefer one), and what to do when the
+  deterministically-preferred move turns out to be unsafe.
 """
 from __future__ import annotations
 
@@ -11,7 +21,6 @@ from dataclasses import dataclass, field
 
 DIRECTIONS = ["up", "down", "left", "right"]
 _DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
-_OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 
 
 @dataclass
@@ -27,6 +36,7 @@ class SnakeGame:
     alive: bool = True
     ticks: int = 0
     score: int = 0
+    focus_axis: str | None = None  # "x" | "y" | None -- the persistent plan
 
     def __post_init__(self):
         self.reset()
@@ -38,6 +48,7 @@ class SnakeGame:
         self.alive = True
         self.ticks = 0
         self.score = 0
+        self.focus_axis = None
         self._spawn_food()
 
     def _spawn_food(self) -> None:
@@ -49,6 +60,7 @@ class SnakeGame:
             if (x, y) not in occupied
         ]
         self.food = random.choice(free) if free else self.body[0]
+        self.focus_axis = None  # the old plan's target no longer exists
 
     def head(self) -> tuple[int, int]:
         return self.body[0]
@@ -106,33 +118,67 @@ class SnakeGame:
         self.body = new_body
         if ate:
             self.score += 1
-            self._spawn_food()
+            self._spawn_food()  # also clears focus_axis: new target
         return True, ate
 
 
-FOOD_DIRECTION_INSTRUCTIONS = (
-    "You control a snake in a grid game. Every direction offered is already "
-    "confirmed safe (no wall, no self-collision) -- that part is handled for "
-    "you. Your only job: pick whichever safe direction moves you closer to "
-    "the food, using food_direction relative to your head position."
+AXIS_CHOICE_INSTRUCTIONS = (
+    "You control a snake in a grid game. The food is offset from you on "
+    "both axes. Pick which axis to close first: 'x' (chase the food's "
+    "left/right offset) or 'y' (chase its up/down offset). Whichever you "
+    "pick, you'll keep closing that gap every turn until it's shut."
+)
+FALLBACK_INSTRUCTIONS = (
+    "You control a snake in a grid game. Your planned move (following "
+    "food_direction) isn't safe this turn. Pick whichever of the offered "
+    "safe directions is the least costly detour."
 )
 
 
 def decide_move(game: "SnakeGame", choose) -> tuple[str, dict | None]:
-    """The one judgment this game actually needs: given only the *safe*
-    directions, which one heads toward the food? Safety itself is a rule
-    the engine already knows and enforces here -- it's never something we
-    ask a model to (re-)derive.
+    """choose(instructions, options, state) -> {"choice": ..., ...}
 
-    choose(instructions, options, state) -> {"choice": ..., ...}
-    Returns (chosen_direction, judgment_result_or_None). judgment_result is
-    None when the move was forced (0 or 1 safe options) and no judgment was
-    needed at all.
+    Returns (chosen_direction, judgment_result_or_None). judgment_result
+    is None on every tick that was fully deterministic -- which is most
+    of them, by design: the model is invoked only for the two situations
+    that are genuinely ambiguous (see module docstring).
     """
     safe_moves = [d for d in DIRECTIONS if game.is_safe(d)]
     if len(safe_moves) <= 1:
         return (safe_moves[0] if safe_moves else game.direction), None
 
-    state = game.state_dict()
-    result = choose(FOOD_DIRECTION_INSTRUCTIONS, safe_moves, state)
+    hx, hy = game.head()
+    fx, fy = game.food
+    dx, dy = fx - hx, fy - hy
+
+    if game.focus_axis == "x" and dx == 0:
+        game.focus_axis = None
+    if game.focus_axis == "y" and dy == 0:
+        game.focus_axis = None
+
+    judgment = None
+    if game.focus_axis is None:
+        if dx != 0 and dy == 0:
+            game.focus_axis = "x"
+        elif dy != 0 and dx == 0:
+            game.focus_axis = "y"
+        elif dx != 0 and dy != 0:
+            result = choose(AXIS_CHOICE_INSTRUCTIONS, ["x", "y"], game.state_dict())
+            game.focus_axis = result["choice"]
+            judgment = result
+        # dx == 0 and dy == 0 would mean we're already on the food, which
+        # step() would have resolved as "ate" -- shouldn't reach here.
+
+    preferred = None
+    if game.focus_axis == "x":
+        preferred = "right" if dx > 0 else "left"
+    elif game.focus_axis == "y":
+        preferred = "down" if dy > 0 else "up"
+
+    if preferred and preferred in safe_moves:
+        return preferred, judgment
+
+    # the deterministic plan's move isn't safe -- this, and only this,
+    # is a real judgment call among whatever safe options remain.
+    result = choose(FALLBACK_INSTRUCTIONS, safe_moves, game.state_dict())
     return result["choice"], result

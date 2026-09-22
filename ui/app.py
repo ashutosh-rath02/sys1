@@ -112,11 +112,13 @@ if mode == "Judgment playground":
 
 else:
     st.markdown(
-        "The game engine owns every rule, including safety: it already knows "
-        "which directions are safe (no wall, no self-collision) and only "
-        "asks the model when there's a real choice among *safe* directions. "
-        "The model's only job is picking the safe direction that heads "
-        "toward the food — it is never asked to (re-)derive safety itself."
+        "Memory lives in the game engine, not the model: once it commits to "
+        "closing the gap on one axis (x or y), following that plan is fully "
+        "deterministic code, persisted in `game.focus_axis` across ticks — "
+        "no judgment, and nothing for the model to forget. The model is "
+        "asked only for the two things that are genuinely ambiguous: which "
+        "axis to tackle first when both are open, and what to do when the "
+        "planned move turns out to be unsafe. Most ticks make zero model calls."
     )
 
     st.caption("Defaults (24x16, length 6) match the laya-mlx snake demo for a fair comparison.")
@@ -154,18 +156,24 @@ else:
         def choose(instructions, options, state):
             return Choice(options).ask(instructions, state, engine)
 
-        for _ in range(max_ticks):
+        n_asked = 0
+        for tick_num in range(1, max_ticks + 1):
             direction, judgment = decide_move(game, choose)
+            n_asked += judgment is not None
             alive, ate = game.step(direction)
 
             grid_box.code(render_grid(game), language=None)
             status = "alive" if alive else "DIED"
             if judgment is not None:
                 probs = ", ".join(f"{k}={v:.2f}" for k, v in judgment["probabilities"].items())
-                decision_line = f"chose **{direction}** ({probs})"
+                decision_line = f"model asked — chose **{direction}** ({probs})"
             else:
-                decision_line = f"forced move: **{direction}** (only safe option, no judgment needed)"
-            info_box.write(f"tick {game.ticks} | score {game.score} | {status}  \n{decision_line}")
+                decision_line = f"deterministic — moved **{direction}** (no model call)"
+            call_rate = n_asked / tick_num
+            info_box.write(
+                f"tick {game.ticks} | score {game.score} | {status} | "
+                f"model calls {n_asked}/{tick_num} ({call_rate:.0%})  \n{decision_line}"
+            )
 
             if speed > 0:
                 time.sleep(speed)
