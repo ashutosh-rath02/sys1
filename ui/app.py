@@ -29,8 +29,9 @@ st.caption(
 
 with st.sidebar:
     st.header("Model")
-    model_name = st.text_input("Base model", value=DEFAULT_MODEL)
-    st.caption("Any small HF instruct model works. First load downloads and caches it.")
+    default_model = "models/sys1-lora-out" if Path("models/sys1-lora-out").is_dir() else DEFAULT_MODEL
+    model_name = st.text_input("Model (base HF id or local adapter path)", value=default_model)
+    st.caption("Any small HF instruct model works, or a local LoRA adapter directory.")
     primitive = st.radio("Primitive", ["Choice", "Noul", "Score"])
 
 engine = load_engine(model_name)
