@@ -2,3 +2,4 @@ torch>=2.2
 transformers>=4.44
 accelerate>=0.33
 huggingface_hub>=0.24
+streamlit>=1.37

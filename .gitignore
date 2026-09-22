@@ -6,3 +6,4 @@ models/
 *.bin
 .cache/
 data/synthetic/
+streamlit.log
