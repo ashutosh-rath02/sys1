@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+models/
+*.safetensors
+*.bin
+.cache/
+data/synthetic/
