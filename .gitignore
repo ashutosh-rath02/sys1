@@ -6,4 +6,5 @@ models/
 *.bin
 .cache/
 data/synthetic/
+data/prepared/
 streamlit.log
