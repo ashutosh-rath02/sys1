@@ -1,20 +1,12 @@
 """The three judgment primitives: Choice, Noul, Score.
 
-Each wraps a set of possible answers into lettered options, asks the engine
-for a next-token distribution over those letters, and maps the result back
-onto the caller's own labels.
+Each hands its items straight to Engine.judge, which builds the lettered
+prompt (via promptutil, shared with training) and returns a probability
+distribution over the original labels.
 """
 from __future__ import annotations
 
 from .engine import Engine, default_engine
-
-_LETTERS = [chr(ord("A") + i) for i in range(26)]
-
-
-def _lettered_block(items: list[str]) -> tuple[str, list[str]]:
-    letters = _LETTERS[: len(items)]
-    block = "\n".join(f"{letter}) {item}" for letter, item in zip(letters, items))
-    return block, letters
 
 
 class Choice:
@@ -27,15 +19,8 @@ class Choice:
 
     def ask(self, instructions: str, state: dict | None = None, engine: Engine | None = None) -> dict:
         engine = engine or default_engine()
-        block, letters = _lettered_block(self.options)
-        full_instructions = f"{instructions}\nOptions:\n{block}"
-        judgment = engine.judge(full_instructions, letters, state)
-        letter_to_option = dict(zip(letters, self.options))
-        probabilities = {letter_to_option[l]: p for l, p in judgment.probabilities.items()}
-        return {
-            "choice": letter_to_option[judgment.top_label],
-            "probabilities": probabilities,
-        }
+        judgment = engine.judge(instructions, "choice", self.options, state)
+        return {"choice": judgment.top_label, "probabilities": judgment.probabilities}
 
 
 class Noul:
@@ -43,9 +28,8 @@ class Noul:
 
     def ask(self, instructions: str, state: dict | None = None, engine: Engine | None = None) -> dict:
         engine = engine or default_engine()
-        full_instructions = f"{instructions}\nOptions:\nA) Yes\nB) No"
-        judgment = engine.judge(full_instructions, ["A", "B"], state)
-        return {"probability_yes": judgment.probabilities["A"]}
+        judgment = engine.judge(instructions, "noul", ["Yes", "No"], state)
+        return {"probability_yes": judgment.probabilities["Yes"]}
 
 
 class Score:
@@ -58,16 +42,12 @@ class Score:
 
     def ask(self, instructions: str, state: dict | None = None, engine: Engine | None = None) -> dict:
         engine = engine or default_engine()
-        block, letters = _lettered_block(self.levels)
-        full_instructions = f"{instructions}\nLevels (low to high):\n{block}"
-        judgment = engine.judge(full_instructions, letters, state)
-        letter_to_level = dict(zip(letters, self.levels))
-        probabilities = {letter_to_level[l]: p for l, p in judgment.probabilities.items()}
+        judgment = engine.judge(instructions, "score", self.levels, state)
         expected_index = sum(
-            i * judgment.probabilities[letter] for i, letter in enumerate(letters)
+            i * judgment.probabilities[level] for i, level in enumerate(self.levels)
         )
         return {
-            "level": letter_to_level[judgment.top_label],
-            "probabilities": probabilities,
+            "level": judgment.top_label,
+            "probabilities": judgment.probabilities,
             "expected_index": expected_index,
         }

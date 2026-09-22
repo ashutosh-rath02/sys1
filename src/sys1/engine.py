@@ -15,6 +15,8 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from .promptutil import build_user_message
+
 DEFAULT_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 
 
@@ -56,10 +58,8 @@ class Engine:
             ).to(self.device)
         self.model.eval()
 
-    def _build_prompt(self, instructions: str, state: dict | None, answer_line: str) -> str:
-        state_block = f"\nContext:\n{state}\n" if state else "\n"
-        user_msg = f"{instructions}{state_block}{answer_line}"
-        messages = [{"role": "user", "content": user_msg}]
+    def _apply_chat_template(self, user_message: str) -> str:
+        messages = [{"role": "user", "content": user_message}]
         return self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -75,13 +75,12 @@ class Engine:
         return None
 
     @torch.no_grad()
-    def judge(self, instructions: str, labels: list[str], state: dict | None = None) -> RawJudgment:
-        answer_line = "Respond with only the single letter of your answer, nothing else.\nAnswer:"
-        prompt = self._build_prompt(instructions, state, answer_line)
+    def judge(self, instructions: str, primitive: str, items: list[str], state: dict | None = None) -> RawJudgment:
+        user_message, letters = build_user_message(instructions, primitive, items, state)
+        prompt = self._apply_chat_template(user_message)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         logits = self.model(**inputs).logits[0, -1, :]
 
-        letters = [chr(ord("A") + i) for i in range(len(labels))]
         candidate_ids = [self._candidate_token_id(letter) for letter in letters]
         if any(cid is None for cid in candidate_ids):
             raise RuntimeError("Could not resolve candidate letter tokens for this tokenizer.")
@@ -89,9 +88,9 @@ class Engine:
         candidate_logits = torch.tensor([logits[cid].item() for cid in candidate_ids])
         probs = torch.softmax(candidate_logits, dim=0).tolist()
 
-        prob_by_label = {label: p for label, p in zip(labels, probs)}
-        top_label = labels[max(range(len(labels)), key=lambda i: probs[i])]
-        return RawJudgment(labels=labels, probabilities=prob_by_label, top_label=top_label)
+        prob_by_label = {item: p for item, p in zip(items, probs)}
+        top_label = items[max(range(len(items)), key=lambda i: probs[i])]
+        return RawJudgment(labels=items, probabilities=prob_by_label, top_label=top_label)
 
 
 @lru_cache(maxsize=1)

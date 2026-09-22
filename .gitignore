@@ -7,4 +7,5 @@ models/
 .cache/
 data/synthetic/
 data/prepared/
+data/prepared_calibrated/
 streamlit.log
