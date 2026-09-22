@@ -76,3 +76,23 @@ At this scale, going from 0.5B -> 1.5B params bought more than tripling
 the dataset did. Small model, small free-tier GPU, real measured gains
 at every step. Next: try 3B, and/or grow the dataset further to see if
 the bigger model has more headroom to use it.
+
+===============================================================
+[2026-09-22] Post 7 — actually training for calibration, not just accuracy
+===============================================================
+Realized v1 was cheating a bit: plain SFT (next-token cross-entropy over
+the whole vocab) makes the model more likely to say the right answer, but
+nothing in that loss cares whether the resulting probability is honest.
+Jev's own training (per TypeSafe's docs) is "RLCD" -- reinforcement
+learning FOR calibrated decisions, optimizing the probabilities
+themselves against real outcomes.
+
+Our "decision" is a single differentiable softmax over a few candidate
+letters -- no need for full RL/reward-model machinery to get the same
+property. v2 trains with plain gradient descent directly on that exact
+distribution (masked cross-entropy over just the candidate logits), which
+for a one-step decision like this IS the calibration objective. Also
+found and fixed a bug while building this: training data for the Score
+primitive was using the wrong prompt header vs inference, so it was
+learning a slightly different task than it was evaluated on the whole
+time. Numbers next post.
