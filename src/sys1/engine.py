@@ -7,13 +7,24 @@ training/). v0 works with any off-the-shelf instruct model.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 DEFAULT_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+
+
+def _adapter_base_model(model_name: str) -> str | None:
+    """If model_name is a local PEFT adapter directory, return the base
+    model it was trained on; otherwise None."""
+    config_path = Path(model_name) / "adapter_config.json"
+    if not config_path.is_file():
+        return None
+    return json.loads(config_path.read_text(encoding="utf-8"))["base_model_name_or_path"]
 
 
 @dataclass
@@ -29,11 +40,20 @@ class Engine:
     def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None):
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float32 if self.device == "cpu" else torch.bfloat16,
-        ).to(self.device)
+        dtype = torch.float32 if self.device == "cpu" else torch.bfloat16
+
+        base_model = _adapter_base_model(model_name)
+        if base_model:
+            from peft import PeftModel
+
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            base = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=dtype)
+            self.model = PeftModel.from_pretrained(base, model_name).to(self.device)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name, torch_dtype=dtype
+            ).to(self.device)
         self.model.eval()
 
     def _build_prompt(self, instructions: str, state: dict | None, answer_line: str) -> str:

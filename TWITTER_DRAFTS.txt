@@ -1,0 +1,50 @@
+sys1 — build-in-public post drafts
+Add new drafts at the top, dated, as milestones land. Nothing here is posted automatically — copy/paste and edit before posting.
+
+===============================================================
+[2026-09-22] Post 1 — v0 announcement (logit-based judgment engine)
+===============================================================
+Building a tiny "System One" model from scratch — inspired by @[TypeSafe]'s
+Jev. Not a chatbot: it makes typed judgments (pick one of N, yes/no, score
+1-5) with real calibrated probabilities.
+
+v0 (today): zero-shot logit scoring on a 0.5B open model, CPU only, no
+training. Reads probabilities straight from next-token logits over a
+constrained answer set instead of asking the model to "say" a confidence
+(LLMs are bad at that).
+
+v1 (next): LoRA fine-tune on free Colab GPU.
+
+Building in public, will post the repo as it lands.
+
+===============================================================
+[2026-09-22] Post 2 — live UI
+===============================================================
+Added a live Streamlit UI for sys1 — type an instruction, some context,
+your options, hit run, watch the real probability distribution come out
+of the model's logits in real time. No more staring at raw JSON in a
+terminal to see if this thing actually works.
+
+===============================================================
+[2026-09-22] Post 3 — real training data, no synthetic generation
+===============================================================
+Turns out I didn't need to synthesize training data with an LLM at all —
+pulled 600 real labeled examples straight from public HF datasets:
+- ticket category + urgency labels from an e-commerce support dataset
+- frustration (yes/no) from an emotion dataset (anger vs joy/love)
+Zero API cost, real human-labeled ground truth instead of synthetic.
+
+===============================================================
+[2026-09-22] Post 4 — v1 LoRA fine-tune results
+===============================================================
+sys1 v1 is in. Fine-tuned the 0.5B base model with LoRA on ~520 real
+examples (free Colab T4 GPU, a few minutes of training) and measured it
+on 91 held-out examples the model never saw:
+
+accuracy: 23.08% -> 59.34%
+Brier score (calibration error, lower = better): 1.16 -> 0.55
+
+More than 2x the accuracy and roughly half the calibration error from a
+few minutes of free-tier fine-tuning on real (not synthetic) data. Same
+tiny 0.5B model, same logit-based probability extraction, just better
+weights. Next: more/bigger training data, then a bigger base model.

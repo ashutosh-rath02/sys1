@@ -4,3 +4,4 @@ accelerate>=0.33
 huggingface_hub>=0.24
 streamlit>=1.37
 datasets>=2.20
+peft>=0.13
