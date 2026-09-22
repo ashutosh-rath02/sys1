@@ -96,3 +96,20 @@ found and fixed a bug while building this: training data for the Score
 primitive was using the wrong prompt header vs inference, so it was
 learning a slightly different task than it was evaluated on the whole
 time. Numbers next post.
+
+===============================================================
+[2026-09-22] Post 8 — calibrated training beats plain SFT, same model/data
+===============================================================
+Same 1.5B model, same 1600-example dataset, only the training objective
+changed:
+
+v1 (plain SFT, whole-vocab cross-entropy):     72.20% acc, Brier 0.35
+v2 (direct calibrated-decision training):      85.89% acc, Brier 0.21
+
+Whole-vocab next-token loss spends almost all its gradient on tokens
+that were never even candidate answers. Training directly on the exact
+softmax-over-candidates distribution the engine reads at inference puts
+100% of the signal where it matters. Biggest single jump of the project
+so far, and it's the training method that's actually closest to how
+Jev itself is trained (RLCD -- optimizing the decision, not just next
+tokens) -- just without needing full RL for a one-step decision.
