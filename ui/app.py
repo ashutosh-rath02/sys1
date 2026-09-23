@@ -11,16 +11,23 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from sys1 import Choice, Noul, Score  # noqa: E402
+from sys1 import Choice, Noul, Score, FastEngine  # noqa: E402
 from sys1.engine import Engine, DEFAULT_MODEL  # noqa: E402
 from sys1.games import SnakeGame, decide_move  # noqa: E402
 
 st.set_page_config(page_title="sys1", page_icon="\U0001f9e0", layout="centered")
 
+FAST_ENCODER_DIR = "models/sys1-fast-encoder"
+
 
 @st.cache_resource(show_spinner="Loading base model (first run downloads it)...")
-def load_engine(model_name: str) -> Engine:
+def load_causal_engine(model_name: str) -> Engine:
     return Engine(model_name=model_name)
+
+
+@st.cache_resource(show_spinner="Loading fast encoder...")
+def load_fast_engine(model_dir: str) -> FastEngine:
+    return FastEngine(model_dir)
 
 
 st.title("sys1")
@@ -32,26 +39,40 @@ st.caption(
 with st.sidebar:
     st.header("Model")
     mode = st.radio("Mode", ["Judgment playground", "Snake game"])
-    if mode == "Snake game":
-        # 0.5B for speed: each tick is a live forward pass on CPU, and the
-        # 1.5B model's per-tick latency makes live play unwatchably slow.
-        default_model = (
-            "models/sys1-lora-out" if Path("models/sys1-lora-out").is_dir() else DEFAULT_MODEL
-        )
-    else:
-        default_model = (
-            "models/sys1-calibrated-out"
-            if Path("models/sys1-calibrated-out").is_dir()
-            else "models/sys1-lora-out"
-            if Path("models/sys1-lora-out").is_dir()
-            else DEFAULT_MODEL
-        )
-    model_name = st.text_input(
-        "Model (base HF id or local adapter path)", value=default_model, key=f"model_input_{mode}"
-    )
-    st.caption("Any small HF instruct model works, or a local LoRA adapter directory.")
 
-engine = load_engine(model_name)
+    fast_available = Path(FAST_ENCODER_DIR).is_dir()
+    engine_type = st.radio(
+        "Engine",
+        ["Fast encoder (v3)", "Causal LM (v1/v2)"] if fast_available else ["Causal LM (v1/v2)"],
+        help=(
+            "Fast encoder: small non-autoregressive model + decision head, "
+            "one batched forward pass, ~10-40ms. Causal LM: chat model read "
+            "via letter-logits, hundreds of ms to seconds per call."
+        ),
+    )
+
+    if engine_type == "Fast encoder (v3)":
+        engine = load_fast_engine(FAST_ENCODER_DIR)
+    else:
+        if mode == "Snake game":
+            # 0.5B for speed: each tick is a live forward pass on CPU, and
+            # the 1.5B model's per-tick latency is unwatchably slow live.
+            default_model = (
+                "models/sys1-lora-out" if Path("models/sys1-lora-out").is_dir() else DEFAULT_MODEL
+            )
+        else:
+            default_model = (
+                "models/sys1-calibrated-out"
+                if Path("models/sys1-calibrated-out").is_dir()
+                else "models/sys1-lora-out"
+                if Path("models/sys1-lora-out").is_dir()
+                else DEFAULT_MODEL
+            )
+        model_name = st.text_input(
+            "Model (base HF id or local adapter path)", value=default_model, key=f"model_input_{mode}"
+        )
+        st.caption("Any small HF instruct model works, or a local LoRA adapter directory.")
+        engine = load_causal_engine(model_name)
 
 if mode == "Judgment playground":
     primitive = st.radio("Primitive", ["Choice", "Noul", "Score"])
