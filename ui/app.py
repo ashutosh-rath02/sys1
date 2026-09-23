@@ -118,7 +118,9 @@ else:
         "no judgment, and nothing for the model to forget. The model is "
         "asked only for the two things that are genuinely ambiguous: which "
         "axis to tackle first when both are open, and what to do when the "
-        "planned move turns out to be unsafe. Most ticks make zero model calls."
+        "planned move turns out to be unsafe. Most ticks make zero model calls "
+        "and run instantly; a real forward pass only happens on the rest — "
+        "that's why play speeds up and slows down instead of ticking evenly."
     )
 
     st.caption("Defaults (24x16, length 6) match the laya-mlx snake demo for a fair comparison.")
@@ -132,52 +134,103 @@ else:
     with col4:
         max_ticks = st.slider("Max ticks", 20, 2000, 800)
 
-    speed = st.slider("Seconds per tick (animation speed)", 0.0, 0.5, 0.04)
+    speed = st.slider("Seconds per deterministic tick (animation pacing)", 0.0, 0.3, 0.03)
     play = st.button("Play", type="primary")
 
-    grid_box = st.empty()
-    info_box = st.empty()
+    CELL_PX = 16
+    COLOR_EMPTY = "#1c1f26"
+    COLOR_BODY = "#35c9c9"
+    COLOR_HEAD = "#f5f5f5"
+    COLOR_FOOD = "#ff4d6d"
+    COLOR_BG = "#0e1117"
 
-    def render_grid(game: SnakeGame) -> str:
-        grid = [["." for _ in range(game.width)] for _ in range(game.height)]
-        for x, y in game.body[1:]:
-            grid[y][x] = "o"
+    def render_grid_html(game: SnakeGame) -> str:
+        body_set = set(game.body[1:])
         hx, hy = game.head()
-        grid[hy][hx] = "H"
         fx, fy = game.food
-        grid[fy][fx] = "F"
-        return "\n".join(" ".join(row) for row in grid)
+        cells = []
+        for y in range(game.height):
+            for x in range(game.width):
+                if (x, y) == (hx, hy):
+                    color = COLOR_HEAD
+                elif (x, y) == (fx, fy):
+                    color = COLOR_FOOD
+                elif (x, y) in body_set:
+                    color = COLOR_BODY
+                else:
+                    color = COLOR_EMPTY
+                cells.append(
+                    f'<div style="width:{CELL_PX}px;height:{CELL_PX}px;'
+                    f'background:{color};border-radius:2px;"></div>'
+                )
+        return (
+            f'<div style="display:inline-grid;grid-template-columns:repeat({game.width}, {CELL_PX}px);'
+            f'gap:2px;background:{COLOR_BG};padding:10px;border-radius:8px;">'
+            + "".join(cells)
+            + "</div>"
+        )
+
+    def render_bars_html(probs: dict | None) -> str:
+        if not probs:
+            return '<div style="color:#666;font-family:monospace;">no judgment yet this game</div>'
+        rows = []
+        for label, p in sorted(probs.items(), key=lambda kv: -kv[1]):
+            pct = round(p * 100)
+            rows.append(
+                '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;'
+                'font-family:monospace;font-size:13px;">'
+                f'<div style="width:70px;color:#ccc;">{label.upper()}</div>'
+                f'<div style="flex:1;background:{COLOR_EMPTY};border-radius:3px;height:14px;">'
+                f'<div style="width:{pct}%;background:{COLOR_BODY};height:100%;border-radius:3px;"></div></div>'
+                f'<div style="width:40px;color:#ccc;text-align:right;">{pct}%</div></div>'
+            )
+        return "".join(rows)
+
+    grid_box = st.empty()
+    thinking_box = st.empty()
+    stats_box = st.empty()
+    bars_box = st.empty()
 
     if play:
         game = SnakeGame(width=grid_w, height=grid_h, initial_length=initial_length)
-        grid_box.code(render_grid(game), language=None)
-        info_box.write(f"tick 0 | score 0 | alive")
+        grid_box.markdown(render_grid_html(game), unsafe_allow_html=True)
+
+        decision_times: list[float] = []
+        last_probs: dict | None = None
 
         def choose(instructions, options, state):
-            return Choice(options).ask(instructions, state, engine)
+            thinking_box.markdown("🤔 **model thinking…**")
+            start = time.perf_counter()
+            result = Choice(options).ask(instructions, state, engine)
+            decision_times.append(time.perf_counter() - start)
+            thinking_box.empty()
+            return result
 
         n_asked = 0
+        start_time = time.perf_counter()
         for tick_num in range(1, max_ticks + 1):
             direction, judgment = decide_move(game, choose)
             n_asked += judgment is not None
+            if judgment is not None:
+                last_probs = judgment["probabilities"]
             alive, ate = game.step(direction)
 
-            grid_box.code(render_grid(game), language=None)
-            status = "alive" if alive else "DIED"
-            if judgment is not None:
-                probs = ", ".join(f"{k}={v:.2f}" for k, v in judgment["probabilities"].items())
-                decision_line = f"model asked — chose **{direction}** ({probs})"
-            else:
-                decision_line = f"deterministic — moved **{direction}** (no model call)"
-            call_rate = n_asked / tick_num
-            info_box.write(
-                f"tick {game.ticks} | score {game.score} | {status} | "
-                f"model calls {n_asked}/{tick_num} ({call_rate:.0%})  \n{decision_line}"
-            )
+            grid_box.markdown(render_grid_html(game), unsafe_allow_html=True)
+            bars_box.markdown(render_bars_html(last_probs), unsafe_allow_html=True)
 
-            if speed > 0:
+            elapsed = max(time.perf_counter() - start_time, 1e-6)
+            avg_decision_ms = (sum(decision_times) / len(decision_times) * 1000) if decision_times else 0.0
+            with stats_box.container():
+                c1, c2, c3, c4, c5 = st.columns(5)
+                c1.metric("Score", game.score)
+                c2.metric("Ticks/s", f"{tick_num / elapsed:.1f}")
+                c3.metric("Model calls", f"{n_asked}/{tick_num}", f"{n_asked / tick_num:.0%}")
+                c4.metric("Avg decision", f"{avg_decision_ms:.0f} ms")
+                c5.metric("Status", "alive" if alive else "DIED")
+
+            if judgment is None and speed > 0:
                 time.sleep(speed)
             if not alive:
                 break
 
-        st.success(f"Game over — survived {game.ticks} ticks, score {game.score}")
+        st.success(f"Game over — survived {game.ticks} ticks, score {game.score}, {n_asked} model calls")
