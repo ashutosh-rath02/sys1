@@ -9,10 +9,13 @@ Memory lives in the game state (game.focus_axis), not in the model:
   is right." That commitment persists across ticks in game.focus_axis
   until that axis is actually closed, which is exactly the "memory" a
   model without cross-tick state can't provide on its own.
-- The model is asked exactly two kinds of real questions, each genuinely
-  requiring judgment: which axis to prioritize when *both* are open (no
-  structural reason to prefer one), and what to do when the
-  deterministically-preferred move turns out to be unsafe.
+- Which axis to close first (when both are open) is also deterministic:
+  closing the larger gap first is always at least as good, so there's no
+  real judgment there either -- just arithmetic.
+- The model is asked exactly one kind of real question: what to do when
+  the deterministically-preferred move turns out to be unsafe. That's the
+  only situation left with genuine ambiguity, and it's rare -- most games
+  now run start to finish with zero model calls.
 """
 from __future__ import annotations
 
@@ -122,12 +125,6 @@ class SnakeGame:
         return True, ate
 
 
-AXIS_CHOICE_INSTRUCTIONS = (
-    "You control a snake in a grid game. The food is offset from you on "
-    "both axes. Pick which axis to close first: 'x' (chase the food's "
-    "left/right offset) or 'y' (chase its up/down offset). Whichever you "
-    "pick, you'll keep closing that gap every turn until it's shut."
-)
 FALLBACK_INSTRUCTIONS = (
     "You control a snake in a grid game. Your planned move (following "
     "food_direction) isn't safe this turn. Pick whichever of the offered "
@@ -139,9 +136,9 @@ def decide_move(game: "SnakeGame", choose) -> tuple[str, dict | None]:
     """choose(instructions, options, state) -> {"choice": ..., ...}
 
     Returns (chosen_direction, judgment_result_or_None). judgment_result
-    is None on every tick that was fully deterministic -- which is most
-    of them, by design: the model is invoked only for the two situations
-    that are genuinely ambiguous (see module docstring).
+    is None on every tick that was fully deterministic -- which is nearly
+    all of them, by design: the model is invoked only for the one
+    situation that's genuinely ambiguous (see module docstring).
     """
     safe_moves = [d for d in DIRECTIONS if game.is_safe(d)]
     if len(safe_moves) <= 1:
@@ -163,9 +160,13 @@ def decide_move(game: "SnakeGame", choose) -> tuple[str, dict | None]:
         elif dy != 0 and dx == 0:
             game.focus_axis = "y"
         elif dx != 0 and dy != 0:
-            result = choose(AXIS_CHOICE_INSTRUCTIONS, ["x", "y"], game.state_dict())
-            game.focus_axis = result["choice"]
-            judgment = result
+            # Which axis to close first has no real ambiguity worth a slow
+            # inference call for: closing the larger gap first is always at
+            # least as good (it can't make the smaller gap worse, and it
+            # can't be blocked by anything the other choice wouldn't also
+            # risk). Keeping this deterministic removes the one recurring
+            # pause that used to hit right after every food eaten.
+            game.focus_axis = "x" if abs(dx) >= abs(dy) else "y"
         # dx == 0 and dy == 0 would mean we're already on the food, which
         # step() would have resolved as "ate" -- shouldn't reach here.
 

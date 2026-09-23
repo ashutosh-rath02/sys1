@@ -113,14 +113,14 @@ if mode == "Judgment playground":
 else:
     st.markdown(
         "Memory lives in the game engine, not the model: once it commits to "
-        "closing the gap on one axis (x or y), following that plan is fully "
-        "deterministic code, persisted in `game.focus_axis` across ticks — "
-        "no judgment, and nothing for the model to forget. The model is "
-        "asked only for the two things that are genuinely ambiguous: which "
-        "axis to tackle first when both are open, and what to do when the "
-        "planned move turns out to be unsafe. Most ticks make zero model calls "
-        "and run instantly; a real forward pass only happens on the rest — "
-        "that's why play speeds up and slows down instead of ticking evenly."
+        "closing the gap on one axis (x or y), following that plan — and even "
+        "picking *which* axis to close first — is fully deterministic code, "
+        "persisted in `game.focus_axis` across ticks. The model is asked only "
+        "when the deterministic plan's move turns out unsafe (blocked by a "
+        "wall or its own body) — the one situation left with real ambiguity. "
+        "That's rare, so most games now run start to finish with zero model "
+        "calls; the few pauses you do see are genuine hazard judgments, not "
+        "routine per-move decisions."
     )
 
     st.caption("Defaults (24x16, length 6) match the laya-mlx snake demo for a fair comparison.")
