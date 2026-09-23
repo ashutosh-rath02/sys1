@@ -2,6 +2,35 @@ sys1 — build-in-public post drafts
 Add new drafts at the top, dated, as milestones land. Nothing here is posted automatically — copy/paste and edit before posting.
 
 ===============================================================
+[2026-09-23] Post 9 — the bug wasn't the model, it was asking it to remember
+===============================================================
+Had sys1 playing Snake (state -> Choice -> direction, one call per tick).
+It kept zigzagging into itself instead of heading to the food. Looked
+like a broken model. It wasn't.
+
+Every tick was judged fresh, with zero memory of the previous tick. So
+if it lined up with the food on one axis, the NEXT tick had no idea that
+alignment was worth protecting -- it would casually undo its own
+progress. Small model, no memory, no plan. Exactly what you'd expect.
+
+Fix wasn't "train harder" -- it was architectural: move memory into the
+game engine, not the model. Once you commit to closing the gap on one
+axis (x or y), the correct move along it is 100% deterministic -- no
+judgment needed, so don't ask. That commitment now lives in
+game.focus_axis, code-owned, persists tick to tick. The model only gets
+asked two genuinely ambiguous questions: which axis to prioritize when
+both are open, and what to do when the planned move turns out unsafe.
+
+Before: dies fast, doesn't reach food, visibly incoherent.
+After (same 0.5B model, same everything else): 3 foods eaten, alive at
+60/60 ticks, and the model was only needed on 8 of those 60 ticks (13%).
+Most of the game now runs as instant deterministic code -- the model
+shows up exactly when there's a real decision, not every single frame.
+
+Screenshot: live run in the sys1 Streamlit UI, showing the grid plus the
+"model calls X/Y" counter tick by tick.
+
+===============================================================
 [2026-09-22] Post 1 — v0 announcement (logit-based judgment engine)
 ===============================================================
 Building a tiny "System One" model from scratch — inspired by @[TypeSafe]'s
