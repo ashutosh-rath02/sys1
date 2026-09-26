@@ -2,6 +2,37 @@ sys1 — build-in-public post drafts
 Add new drafts at the top, dated, as milestones land. Nothing here is posted automatically — copy/paste and edit before posting.
 
 ===============================================================
+[2026-09-26] Post 12 — closed the accuracy gap, exposed a calibration one
+===============================================================
+Follow-up to yesterday's benchmark reality check (37% on a public
+agent-trace benchmark my model had never trained on). Pulled TRAIN-only
+data from that same benchmark's public sources (never touching the
+actual test/eval split) and retrained.
+
+Real before/after, all on held-out data:
+                        before      after
+agent-trace benchmark   37.4% acc   64.4% acc  (Brier 0.19 -> 0.26, worse)
+phishing benchmark      49.0% acc   56.5% acc  (Brier 0.26 -> 0.37, worse)
+my own ticket domain    87.1% acc   91.3% acc  (Brier 0.18 -> 0.12, better)
+
+Good part: big accuracy gains on both new domains, and my original
+domain didn't regress -- it actually got better too. More varied
+training data made the model generally sharper, not just narrowly
+specialized.
+
+Honest part: calibration got worse on both new domains even as accuracy
+went up. On the agent-trace task the "gold" answer is itself a noisy
+multi-annotator consensus (annotators disagree ~50% of the time by the
+dataset's own numbers) -- my model got more confident and more often
+right on the most-likely answer, but that confidence overshoots against
+a genuinely split true distribution. On phishing, recall is still only
+14.7% -- it mostly still says "legitimate," and is only very sure on the
+phishing calls it does make.
+
+Accuracy went up. Confidence went up more than it should have. That's
+the actual next problem to solve, not a new dataset.
+
+===============================================================
 [2026-09-26] Post 11 — v3: real ms-latency, and a real reality check
 ===============================================================
 Two updates.
