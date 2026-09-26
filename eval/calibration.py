@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sys1 import Choice, Noul, Score  # noqa: E402
 from sys1.engine import Engine  # noqa: E402
+from sys1.fast_engine import FastEngine  # noqa: E402
 
 
 def evaluate(rows: list[dict], engine: Engine) -> None:
@@ -59,10 +60,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_file", type=Path)
     parser.add_argument("--model", default=None, help="override the base model name")
+    parser.add_argument("--engine", choices=["causal", "fast"], default="causal")
     args = parser.parse_args()
 
     rows = [json.loads(line) for line in args.input_file.read_text(encoding="utf-8").splitlines() if line.strip()]
-    engine = Engine(model_name=args.model) if args.model else Engine()
+    if args.engine == "fast":
+        engine = FastEngine(args.model)
+    else:
+        engine = Engine(model_name=args.model) if args.model else Engine()
     evaluate(rows, engine)
 
 
