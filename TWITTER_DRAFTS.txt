@@ -2,6 +2,49 @@ sys1 — build-in-public post drafts
 Add new drafts at the top, dated, as milestones land. Nothing here is posted automatically — copy/paste and edit before posting.
 
 ===============================================================
+[2026-09-26] Post 11 — v3: real ms-latency, and a real reality check
+===============================================================
+Two updates.
+
+1) sys1 finally hits the speed the whole idea was built around. Swapped
+the causal-chat-model-plus-logits approach (v1/v2) for a small
+non-autoregressive encoder + decision head (Laya's actual architecture,
+not a retrofit): one batched forward pass, no chat template, no
+generation.
+
+Same CPU, no GPU, measured end to end:
+v1/v2 (Qwen 0.5B/1.5B via chat template): seconds per decision
+v3 (22M-param encoder): 34.6ms average, Snake at 2.7ms/tick
+
+It's not just faster -- it's MORE accurate on our own held-out data too
+(87.1% vs 85.9%, Brier 0.18 vs 0.21). The architecture retrofit was
+costing us on both axes.
+
+2) Then I found out how Jev and Laya actually get benchmarked --
+public datasets (Luni/laya-jev-benchmark: PhishNChips phishing emails,
+LocalLLaMA/typed-decisions agent-trace risk assessment) -- and ran sys1
+through the exact same tasks instead of just our own eval set.
+
+Reality check: 87% on our own data, 37% on the public agent-trace
+benchmark, on a domain (agent risk/urgency judgment) nothing like our
+training data (support tickets, complaint urgency, frustration
+detection). Same real model, same real pipeline, just tested honestly
+on someone else's task instead of our own.
+
+Ran the bigger causal-LM version (v1/v2, 1.5B) through the same
+benchmark for comparison: 22.7% accuracy, ~4.4s per decision. The small
+22M-param encoder beat a 68x-larger model on unseen data AND did it
+~130x faster. Bigger ≠ better when neither has seen the domain --
+architecture and training objective mattered more than parameter count
+here.
+
+Good news: the speed and the training method both work, on data outside
+what either model has seen. The gap is data coverage, not architecture,
+and now we know exactly where it is instead of guessing. Next: train on
+the domains these benchmarks actually test, and post the real
+before/after.
+
+===============================================================
 [2026-09-23] Post 9 — the bug wasn't the model, it was asking it to remember
 ===============================================================
 Had sys1 playing Snake (state -> Choice -> direction, one call per tick).
