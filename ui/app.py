@@ -17,7 +17,11 @@ from sys1.games import SnakeGame, decide_move  # noqa: E402
 
 st.set_page_config(page_title="sys1", page_icon="\U0001f9e0", layout="centered")
 
-FAST_ENCODER_DIR = "models/sys1-fast-encoder"
+FAST_ENCODER_DIR = (
+    "models/sys1-fast-encoder-v2"
+    if Path("models/sys1-fast-encoder-v2").is_dir()
+    else "models/sys1-fast-encoder"
+)
 
 
 @st.cache_resource(show_spinner="Loading base model (first run downloads it)...")
