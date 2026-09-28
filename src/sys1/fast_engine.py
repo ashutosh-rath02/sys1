@@ -6,7 +6,10 @@ Noul/Score and the game code work with either engine unchanged.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
+from huggingface_hub import hf_hub_download
 from torch import nn
 from transformers import AutoModel, AutoTokenizer
 
@@ -33,7 +36,11 @@ class FastEngine:
         self.model_dir = model_dir
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
         self.model = _CrossEncoderScorer(model_dir)
-        self.model.head.load_state_dict(torch.load(f"{model_dir}/head.pt", weights_only=True))
+
+        head_path = Path(model_dir) / "head.pt"
+        if not head_path.is_file():
+            head_path = hf_hub_download(repo_id=model_dir, filename="head.pt")
+        self.model.head.load_state_dict(torch.load(head_path, weights_only=True))
         self.model.eval()
 
     @torch.no_grad()
