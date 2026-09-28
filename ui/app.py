@@ -21,6 +21,8 @@ FAST_ENCODER_DIR = (
     "models/sys1-fast-encoder-v2"
     if Path("models/sys1-fast-encoder-v2").is_dir()
     else "models/sys1-fast-encoder"
+    if Path("models/sys1-fast-encoder").is_dir()
+    else "ashurath/sys1-fast-encoder-v2"  # no local checkpoint -- load from the Hub
 )
 
 
