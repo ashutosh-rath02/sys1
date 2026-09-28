@@ -24,6 +24,7 @@ from datasets import load_dataset  # noqa: E402
 from sys1 import Choice, Noul, Score  # noqa: E402
 from sys1.engine import Engine  # noqa: E402
 from sys1.fast_engine import FastEngine  # noqa: E402
+from sys1.dual_engine import DualEngine  # noqa: E402
 
 SUBDECISIONS = ["outcome", "action", "needs_review", "risk", "urgency"]
 
@@ -70,7 +71,7 @@ def run_one(row: dict, questions: dict, engine) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
-    parser.add_argument("--engine", choices=["causal", "fast"], required=True)
+    parser.add_argument("--engine", choices=["causal", "fast", "dual"], required=True)
     parser.add_argument("--split", default="test")
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
@@ -79,7 +80,12 @@ def main() -> None:
     if args.limit:
         ds = ds.select(range(min(args.limit, len(ds))))
 
-    engine = FastEngine(args.model) if args.engine == "fast" else Engine(model_name=args.model)
+    if args.engine == "fast":
+        engine = FastEngine(args.model)
+    elif args.engine == "dual":
+        engine = DualEngine(args.model)
+    else:
+        engine = Engine(model_name=args.model)
 
     totals = {key: {"n": 0, "correct": 0, "brier": 0.0, "latency": 0.0} for key in SUBDECISIONS}
 

@@ -20,6 +20,7 @@ from datasets import load_dataset  # noqa: E402
 from sys1 import Noul  # noqa: E402
 from sys1.engine import Engine  # noqa: E402
 from sys1.fast_engine import FastEngine  # noqa: E402
+from sys1.dual_engine import DualEngine  # noqa: E402
 
 INSTRUCTIONS = "Is this email a phishing attempt?"
 
@@ -27,7 +28,7 @@ INSTRUCTIONS = "Is this email a phishing attempt?"
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
-    parser.add_argument("--engine", choices=["causal", "fast"], required=True)
+    parser.add_argument("--engine", choices=["causal", "fast", "dual"], required=True)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -36,7 +37,12 @@ def main() -> None:
     if args.limit:
         ds = ds.shuffle(seed=args.seed).select(range(min(args.limit, len(ds))))
 
-    engine = FastEngine(args.model) if args.engine == "fast" else Engine(model_name=args.model)
+    if args.engine == "fast":
+        engine = FastEngine(args.model)
+    elif args.engine == "dual":
+        engine = DualEngine(args.model)
+    else:
+        engine = Engine(model_name=args.model)
     noul = Noul()
 
     n = n_correct = 0
