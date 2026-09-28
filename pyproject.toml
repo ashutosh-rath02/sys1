@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sys1"
+version = "0.3.0"
+description = "A tiny open 'System One' model: typed judgments (Choice/Noul/Score) with calibrated probabilities, not generated text."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.2",
+    "transformers>=4.44",
+    "accelerate>=0.33",
+    "huggingface_hub>=0.24",
+    "datasets>=2.20",
+    "peft>=0.13",
+]
+
+[project.optional-dependencies]
+serve = ["fastapi>=0.110", "uvicorn>=0.29"]
+ui = ["streamlit>=1.37"]
+
+[project.scripts]
+sys1-serve = "sys1.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

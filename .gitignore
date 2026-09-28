@@ -10,3 +10,5 @@ data/synthetic/
 data/prepared/
 data/prepared_calibrated/
 streamlit.log
+scratch/
+*.egg-info/
