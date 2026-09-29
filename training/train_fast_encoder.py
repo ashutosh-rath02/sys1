@@ -94,7 +94,7 @@ def score_batch(model: CrossEncoderScorer, tokenizer, batch: list[dict], device:
     for ex in batch:
         contexts.extend([ex["context"]] * k)
         options.extend(ex["items"])
-    tok = tokenizer(contexts, options, return_tensors="pt", padding=True, truncation=True).to(device)
+    tok = tokenizer(contexts, options, return_tensors="pt", padding=True, truncation=True, max_length=256).to(device)
     scores = model(tok["input_ids"], tok["attention_mask"])
     return scores.view(len(batch), k)
 

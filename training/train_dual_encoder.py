@@ -102,11 +102,11 @@ def score_batch(model: DualEncoder, tokenizer, batch: list[dict], temperature: f
     """All examples in `batch` share the same K. Returns (B, K) scores."""
     b, k = len(batch), len(batch[0]["items"])
 
-    ctx_tok = tokenizer([ex["context"] for ex in batch], return_tensors="pt", padding=True, truncation=True).to(device)
+    ctx_tok = tokenizer([ex["context"] for ex in batch], return_tensors="pt", padding=True, truncation=True, max_length=256).to(device)
     state_emb = model.encode_state(ctx_tok["input_ids"], ctx_tok["attention_mask"])  # (B, d)
 
     flat_items = [item for ex in batch for item in ex["items"]]
-    item_tok = tokenizer(flat_items, return_tensors="pt", padding=True, truncation=True).to(device)
+    item_tok = tokenizer(flat_items, return_tensors="pt", padding=True, truncation=True, max_length=64).to(device)
     action_emb = model.encode_action(item_tok["input_ids"], item_tok["attention_mask"]).view(b, k, -1)  # (B, K, d)
 
     return torch.einsum("bd,bkd->bk", state_emb, action_emb) / temperature
