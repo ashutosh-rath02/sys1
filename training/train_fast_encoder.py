@@ -30,6 +30,13 @@ from collections import defaultdict
 from pathlib import Path
 
 import torch
+
+# Rapid, varying-shape batches can hit a native thread-pool race condition
+# in PyTorch's CPU backend (observed here as an intermittent segfault, not
+# tied to any specific data row -- the exact same workload ran clean on a
+# separate process). Pinning to a single intra-op thread trades some raw
+# speed for eliminating that race entirely.
+torch.set_num_threads(1)
 import torch.nn.functional as F
 from torch import nn
 from transformers import AutoModel, AutoTokenizer

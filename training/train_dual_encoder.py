@@ -33,6 +33,11 @@ from collections import defaultdict
 from pathlib import Path
 
 import torch
+
+# See train_fast_encoder.py's comment: pinning intra-op threads avoids an
+# intermittent native thread-pool segfault observed under rapid,
+# varying-shape CPU batches.
+torch.set_num_threads(1)
 import torch.nn.functional as F
 from torch import nn
 from transformers import AutoModel, AutoTokenizer
