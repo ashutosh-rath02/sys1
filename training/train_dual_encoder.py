@@ -1,7 +1,7 @@
-"""v4: a dual-encoder architecture, same spirit as Contrastive-LM/CLM's
-state-encoder / action-encoder split, scaled to what we can actually
-train (no 90M-example pretrain -- a shared small backbone with two
-projection heads, trained with an InfoNCE-style contrastive loss).
+"""v4: a dual-encoder architecture -- separate state and action encoders
+compared via dot product -- scaled to what we can actually train (a
+shared small backbone with two projection heads, trained with an
+InfoNCE-style contrastive loss).
 
 Why this is a genuinely different architecture from v3's cross-encoder,
 not just a rename: v3 encodes (context, option) TOGETHER every call, so
@@ -10,8 +10,11 @@ reused. Here, context and options are encoded SEPARATELY -- the score is
 just a dot product -- so an option's embedding is the same every time
 its text is the same. Fixed, reused candidate sets (Snake's four
 directions, a ticket-routing option list) can have their action
-embeddings computed once and cached, matching CLM's own claimed latency
-win from this exact property.
+embeddings computed once and cached.
+
+Training batches examples that share the same number of options K
+together (see train_fast_encoder.py's docstring for why) -- a real
+minibatch, not one example at a time.
 
     python training/train_dual_encoder.py data/seed_examples.jsonl data/real_examples.jsonl data/benchmark_domain_examples.jsonl
 
@@ -19,9 +22,14 @@ Saves to models/sys1-dual-encoder/ (backbone + tokenizer + two heads).
 """
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import argparse
 import json
 import random
+from collections import defaultdict
 from pathlib import Path
 
 import torch
@@ -74,28 +82,49 @@ class DualEncoder(nn.Module):
         return F.normalize(self.action_head(self._pool(input_ids, attention_mask)), dim=-1)
 
 
-def score_example(model: DualEncoder, tokenizer, context: str, items: list[str], temperature: float) -> torch.Tensor:
-    ctx_batch = tokenizer([context], return_tensors="pt", padding=True, truncation=True)
-    state_emb = model.encode_state(ctx_batch["input_ids"], ctx_batch["attention_mask"])  # (1, d)
+def make_batches(examples: list[dict], batch_size: int, rng: random.Random) -> list[list[dict]]:
+    """Group examples with the same option count K together (so their
+    action tensors share one padded shape), shuffle, then chunk."""
+    by_k: dict[int, list[dict]] = defaultdict(list)
+    for ex in examples:
+        by_k[len(ex["items"])].append(ex)
 
-    item_batch = tokenizer(items, return_tensors="pt", padding=True, truncation=True)
-    action_embs = model.encode_action(item_batch["input_ids"], item_batch["attention_mask"])  # (K, d)
+    batches = []
+    for group in by_k.values():
+        rng.shuffle(group)
+        for i in range(0, len(group), batch_size):
+            batches.append(group[i : i + batch_size])
+    rng.shuffle(batches)
+    return batches
 
-    return (state_emb @ action_embs.T).squeeze(0) / temperature  # (K,)
+
+def score_batch(model: DualEncoder, tokenizer, batch: list[dict], temperature: float, device: str) -> torch.Tensor:
+    """All examples in `batch` share the same K. Returns (B, K) scores."""
+    b, k = len(batch), len(batch[0]["items"])
+
+    ctx_tok = tokenizer([ex["context"] for ex in batch], return_tensors="pt", padding=True, truncation=True).to(device)
+    state_emb = model.encode_state(ctx_tok["input_ids"], ctx_tok["attention_mask"])  # (B, d)
+
+    flat_items = [item for ex in batch for item in ex["items"]]
+    item_tok = tokenizer(flat_items, return_tensors="pt", padding=True, truncation=True).to(device)
+    action_emb = model.encode_action(item_tok["input_ids"], item_tok["attention_mask"]).view(b, k, -1)  # (B, K, d)
+
+    return torch.einsum("bd,bkd->bk", state_emb, action_emb) / temperature
 
 
 @torch.no_grad()
-def evaluate(model, tokenizer, examples: list[dict], temperature: float) -> tuple[float, float]:
+def evaluate(model, tokenizer, examples: list[dict], temperature: float, device: str, batch_size: int) -> tuple[float, float]:
     model.eval()
     n_correct = 0
     brier_total = 0.0
-    for ex in examples:
-        scores = score_example(model, tokenizer, ex["context"], ex["items"], temperature)
-        probs = torch.softmax(scores, dim=0)
-        pred = probs.argmax().item()
-        n_correct += pred == ex["answer_index"]
-        one_hot = torch.zeros_like(probs)
-        one_hot[ex["answer_index"]] = 1.0
+    rng = random.Random(0)
+    for batch in make_batches(examples, batch_size, rng):
+        scores = score_batch(model, tokenizer, batch, temperature, device)
+        probs = torch.softmax(scores, dim=1)
+        preds = probs.argmax(dim=1)
+        answer_idx = torch.tensor([ex["answer_index"] for ex in batch], device=device)
+        n_correct += (preds == answer_idx).sum().item()
+        one_hot = F.one_hot(answer_idx, probs.size(1)).float()
         brier_total += ((probs - one_hot) ** 2).sum().item()
     model.train()
     n = len(examples)
@@ -107,11 +136,15 @@ def main() -> None:
     parser.add_argument("input_files", nargs="+", type=Path)
     parser.add_argument("--out-dir", type=Path, default=Path("models/sys1-dual-encoder"))
     parser.add_argument("--epochs", type=int, default=6)
+    parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--temperature", type=float, default=0.07, help="InfoNCE temperature")
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"device: {device}")
 
     rows = []
     for path in args.input_files:
@@ -125,10 +158,10 @@ def main() -> None:
     print(f"train={len(train_examples)} val={len(val_examples)}")
 
     tokenizer = AutoTokenizer.from_pretrained(BACKBONE)
-    model = DualEncoder(BACKBONE)
+    model = DualEncoder(BACKBONE).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    acc, brier = evaluate(model, tokenizer, val_examples, args.temperature)
+    acc, brier = evaluate(model, tokenizer, val_examples, args.temperature, device, args.batch_size)
     print(f"before training: accuracy={acc:.2%} brier={brier:.4f}")
 
     best_brier = brier
@@ -136,17 +169,19 @@ def main() -> None:
     best_epoch = -1
 
     for epoch in range(args.epochs):
-        random.Random(args.seed + epoch).shuffle(train_examples)
+        rng = random.Random(args.seed + epoch)
+        batches = make_batches(train_examples, args.batch_size, rng)
         total_loss = 0.0
-        for ex in train_examples:
-            scores = score_example(model, tokenizer, ex["context"], ex["items"], args.temperature)
-            loss = F.cross_entropy(scores.unsqueeze(0), torch.tensor([ex["answer_index"]]))
+        for batch in batches:
+            scores = score_batch(model, tokenizer, batch, args.temperature, device)
+            answer_idx = torch.tensor([ex["answer_index"] for ex in batch], device=device)
+            loss = F.cross_entropy(scores, answer_idx)
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
             total_loss += loss.item()
-        acc, brier = evaluate(model, tokenizer, val_examples, args.temperature)
-        print(f"epoch {epoch}: mean_loss={total_loss / len(train_examples):.4f} val_accuracy={acc:.2%} val_brier={brier:.4f}")
+        acc, brier = evaluate(model, tokenizer, val_examples, args.temperature, device, args.batch_size)
+        print(f"epoch {epoch}: mean_loss={total_loss / len(batches):.4f} val_accuracy={acc:.2%} val_brier={brier:.4f}")
         if brier < best_brier:
             best_brier = brier
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
