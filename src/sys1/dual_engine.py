@@ -32,7 +32,7 @@ class DualEngine:
             from huggingface_hub import hf_hub_download
 
             heads_path = hf_hub_download(repo_id=model_dir, filename="heads.pt")
-        checkpoint = torch.load(heads_path, weights_only=True)
+        checkpoint = torch.load(heads_path, weights_only=True, map_location="cpu")
 
         hidden = self.backbone.config.hidden_size
         embed_dim = checkpoint["embed_dim"]

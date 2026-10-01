@@ -40,7 +40,7 @@ class FastEngine:
         head_path = Path(model_dir) / "head.pt"
         if not head_path.is_file():
             head_path = hf_hub_download(repo_id=model_dir, filename="head.pt")
-        self.model.head.load_state_dict(torch.load(head_path, weights_only=True))
+        self.model.head.load_state_dict(torch.load(head_path, weights_only=True, map_location="cpu"))
         self.model.eval()
 
     @torch.no_grad()
