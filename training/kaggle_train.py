@@ -61,9 +61,7 @@ sys.exit(result.returncode)
 '''
 
 
-def build_payload(
-    staging: Path, script: Path, data_files: list[Path], dataset_slug: str, extra_args: list[str]
-) -> None:
+def build_payload(staging: Path, script: Path, data_files: list[Path]) -> None:
     """Dataset payload holds both the data and our training code, so the
     kernel runs the exact same script we run locally rather than a
     re-implementation that can drift."""
@@ -97,7 +95,7 @@ def main() -> None:
     staging = Path(".kaggle_staging")
     shutil.rmtree(staging, ignore_errors=True)
     data_dir = staging / "data"
-    build_payload(data_dir, args.script, args.data, dataset_slug, args.extra_args)
+    build_payload(data_dir, args.script, args.data)
 
     (data_dir / "dataset-metadata.json").write_text(
         json.dumps({"title": dataset_slug, "id": dataset_id, "licenses": [{"name": "CC0-1.0"}]}),
@@ -106,17 +104,17 @@ def main() -> None:
 
     print(f"uploading data + trainer to {dataset_id} ...", flush=True)
     try:
-        api.dataset_create_new(str(data_dir), public=False, quiet=True, dir_mode="zip")
+        api.dataset_create_new(str(data_dir), public=False, quiet=True, dir_mode="skip")
     except Exception as exc:  # already exists -> push a new version
         if "already" not in str(exc).lower():
             raise
-        api.dataset_create_version(str(data_dir), version_notes="update", quiet=True, dir_mode="zip")
+        api.dataset_create_version(str(data_dir), version_notes="update", quiet=True, dir_mode="skip")
     print("waiting for the dataset to finish processing ...", flush=True)
     time.sleep(25)
 
     kernel_dir = staging / "kernel"
     kernel_dir.mkdir(parents=True, exist_ok=True)
-    data_args = "".join(f'"{{DATA_DIR}}/{f.name}", ' for f in args.data)
+    data_args = "".join('f"{DATA_DIR}/' + f.name + '", ' for f in args.data)
     extra = "".join(f'"{a}", ' for a in args.extra_args)
     (kernel_dir / "script.py").write_text(
         KERNEL_TEMPLATE.format(
