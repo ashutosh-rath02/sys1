@@ -21,6 +21,10 @@ from pathlib import Path
 _EPS = 1e-12
 
 
+class DegenerateFitError(RuntimeError):
+    """Raised when fitting data can't constrain a temperature at all."""
+
+
 def apply_temperature(probs: dict[str, float], temperature: float) -> dict[str, float]:
     if temperature == 1.0:
         return dict(probs)
@@ -65,17 +69,45 @@ def fit_temperature(
 
     coarse = sweep(lo, hi, steps)
     window = (hi - lo) / steps
-    return sweep(max(coarse - window, 0.01), coarse + window, 20)
+    best = sweep(max(coarse - window, 0.01), coarse + window, 20)
+
+    # A fit that runs to either end of the range means the data couldn't
+    # constrain it -- usually because the model is already perfect on this
+    # slice (NLL ~ 0 pushes temperature toward 0 to sharpen further) or
+    # hopeless on it. Either way the number says more about the fitting
+    # data than about calibration, and applying it elsewhere does damage:
+    # we hit exactly this fitting phishing on train-side data the model
+    # scores 100% on, while it manages 58% on the eval split.
+    if best <= lo * 1.5 or best >= hi * 0.95:
+        raise DegenerateFitError(
+            f"temperature fit hit the search boundary (T={best:.3f}); the fitting "
+            f"data does not constrain it -- check whether the model is already "
+            f"saturated on this slice"
+        )
+    return best
 
 
 class Calibrator:
-    """Per-primitive temperatures, fit once and reused at inference."""
+    """Temperatures fit once and reused at inference.
+
+    Scoped per "<domain>:<primitive>" where a domain-specific fit exists,
+    falling back to a global per-primitive temperature. Domain scoping
+    matters more than it sounds: a model can be close to calibrated
+    in-distribution and badly overconfident on a shifted domain, and one
+    global temperature fit across both just splits the difference and
+    fixes neither.
+    """
 
     def __init__(self, temperatures: dict[str, float] | None = None):
         self.temperatures = temperatures or {}
 
-    def apply(self, probs: dict[str, float], primitive: str) -> dict[str, float]:
-        return apply_temperature(probs, self.temperatures.get(primitive, 1.0))
+    def apply(self, probs: dict[str, float], primitive: str, domain: str | None = None) -> dict[str, float]:
+        temperature = None
+        if domain:
+            temperature = self.temperatures.get(f"{domain}:{primitive}")
+        if temperature is None:
+            temperature = self.temperatures.get(primitive, 1.0)
+        return apply_temperature(probs, temperature)
 
     def save(self, path: str | Path) -> None:
         Path(path).write_text(json.dumps(self.temperatures, indent=2), encoding="utf-8")

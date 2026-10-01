@@ -2,12 +2,27 @@
 
 Where we are, where the funded models are, and the specific steps between.
 
-## Baseline (measured, same held-out data each time)
+## Baseline (via `eval/run_all.py`, same held-out data each time)
 
-| | own domain | typed-decisions | phishing |
-|---|---|---|---|
-| v2 (cross-encoder, 22.7M) | 91.3% / Brier 0.119 | 64.4% / 0.263 | 56.5% / 0.370, recall 14.7% |
-| v4 (dual-encoder, 22.9M) | 96.3% / 0.064 | 62.6% / 0.223 | 58.0% / 0.416, recall 17.6% |
+v2 (cross-encoder, 22.7M):
+
+| benchmark | n | acc | Brier | ECE | ms |
+|---|---|---|---|---|---|
+| own_domain | 241 | 91.3% | 0.119 | 0.039 | 44.9 |
+| typed_decisions | 500 | 64.4% | 0.525 | 0.216 | 140.7 |
+| phishing | 200 | 56.5% | 0.739 | 0.373 | 460.8 |
+
+v4 (dual-encoder, 22.9M) — **current best**, recall 17.6% on phishing:
+
+| benchmark | n | acc | Brier | ECE | ms |
+|---|---|---|---|---|---|
+| own_domain | 241 | 96.3% | 0.064 | 0.025 | 26.0 |
+| typed_decisions | 500 | 62.6% | 0.495 | 0.166 | 98.1 |
+| phishing | 200 | 58.0% | 0.832 | 0.419 | 106.3 |
+
+v4 wins almost everywhere and is 2–4x faster; v2 holds a small edge on
+typed-decisions accuracy (64.4 vs 62.6) and phishing Brier/ECE. Work from
+v4 unless a step specifically needs otherwise.
 
 Targets (published, different eval conditions — see the comparison card):
 Laya typed-decisions 76.6%, Laya phishing 98.0%, Jev phishing 95.0%
@@ -38,6 +53,33 @@ ECE from exactly this. Costs no training and cannot change accuracy
 (temperature never moves the argmax), so it is pure calibration gain.
 
 **Gate:** ECE < 0.12 on all three benchmarks, accuracy unchanged.
+
+**Result — partially met.** A single global per-primitive temperature,
+fit cross-domain on train-side data (choice 1.294, noul 1.178, score
+1.227 — all above 1.0, i.e. the model really is systematically
+overconfident):
+
+| benchmark | ECE before | ECE after | accuracy |
+|---|---|---|---|
+| own_domain | 0.025 | 0.040 (worse) | unchanged |
+| typed_decisions | 0.166 | 0.125 | unchanged |
+| phishing | 0.419 | 0.418 (no change) | unchanged |
+
+Accuracy identical everywhere, confirming the implementation is sound
+(temperature cannot move an argmax). But the two failures are
+informative rather than noise:
+
+- **phishing didn't move at all.** Its miscalibration is distribution
+  shift, not generic overconfidence, so a temperature fit on other
+  domains has nothing to grab onto.
+- **own_domain got slightly worse** for the mirror reason — it was
+  already well calibrated at 0.025, so a cross-domain temperature just
+  over-softens it.
+
+Both point the same way: temperatures must be scoped per domain, which is
+what the published work actually does ("after *domain* temperature
+fitting"). `Calibrator` now supports `"<domain>:<primitive>"` keys with
+fallback to the global fit; phishing refit on phishing-only train data.
 
 ## Step 3 — Question decomposition
 

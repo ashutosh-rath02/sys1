@@ -46,7 +46,8 @@ def load_engine(model: str, engine_type: str):
 
 
 def ask_primitive(
-    primitive: str, items: list[str], instructions: str, state, engine, calibrator=None
+    primitive: str, items: list[str], instructions: str, state, engine, calibrator=None,
+    domain: str | None = None,
 ) -> tuple[dict, str]:
     """Returns (probabilities, predicted_label) for any primitive type.
 
@@ -63,7 +64,7 @@ def ask_primitive(
         probs = Choice(items).ask(instructions, state, engine)["probabilities"]
 
     if calibrator is not None:
-        probs = calibrator.apply(probs, primitive)
+        probs = calibrator.apply(probs, primitive, domain)
     return probs, max(probs, key=probs.get)
 
 
@@ -74,7 +75,8 @@ def bench_own_domain(engine, path: Path, calibrator=None) -> ScoreAccumulator:
         primitive = row["primitive"]
         items = row.get("options") or row.get("levels") or []
         start = time.perf_counter()
-        probs, _ = ask_primitive(primitive, items, row["instructions"], row.get("state"), engine, calibrator)
+        probs, _ = ask_primitive(primitive, items, row["instructions"], row.get("state"), engine, calibrator,
+                                 domain="own_domain")
         acc.add(probs, row["answer"], time.perf_counter() - start)
     return acc
 
@@ -95,14 +97,17 @@ def bench_typed_decisions(engine, limit: int, calibrator=None) -> ScoreAccumulat
 
             start = time.perf_counter()
             if qtype == "noul":
-                probs, _ = ask_primitive("noul", [], q["instructions"], state, engine, calibrator)
+                probs, _ = ask_primitive("noul", [], q["instructions"], state, engine, calibrator,
+                                         domain="typed_decisions")
                 probs = {"true": probs["yes"], "false": probs["no"]}
             elif qtype == "score":
                 levels = list(criteria)
-                raw, _ = ask_primitive("score", levels, q["instructions"], state, engine, calibrator)
+                raw, _ = ask_primitive("score", levels, q["instructions"], state, engine, calibrator,
+                                       domain="typed_decisions")
                 probs = {str(i): raw[level] for i, level in enumerate(levels)}
             else:
-                probs, _ = ask_primitive("choice", list(criteria.keys()), q["instructions"], state, engine, calibrator)
+                probs, _ = ask_primitive("choice", list(criteria.keys()), q["instructions"], state, engine,
+                                         calibrator, domain="typed_decisions")
             acc.add(probs, gold, time.perf_counter() - start)
     return acc
 
@@ -118,7 +123,8 @@ def bench_phishing(engine, limit: int, seed: int = 0, calibrator=None) -> ScoreA
         email = json.loads(row["email_content"])
         gold = "yes" if row["phish_label"] == 1 else "no"
         start = time.perf_counter()
-        probs, predicted = ask_primitive("noul", [], PHISHING_INSTRUCTIONS, email, engine, calibrator)
+        probs, predicted = ask_primitive("noul", [], PHISHING_INSTRUCTIONS, email, engine, calibrator,
+                                         domain="phishing")
         acc.add(probs, gold, time.perf_counter() - start)
         if gold == "yes":
             tp += predicted == "yes"

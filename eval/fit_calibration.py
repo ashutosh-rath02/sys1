@@ -40,6 +40,12 @@ def main() -> None:
         ],
     )
     parser.add_argument("--per-primitive-limit", type=int, default=400)
+    parser.add_argument("--domain-key", default=None,
+                        help="save as \"<domain>:<primitive>\" instead of a global per-primitive fit")
+    parser.add_argument("--filter-instructions", default=None,
+                        help="only fit on rows whose instructions match this exactly")
+    parser.add_argument("--merge-into", type=Path, default=None,
+                        help="load this calibration file and add to it rather than starting fresh")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -51,6 +57,8 @@ def main() -> None:
             if not line.strip():
                 continue
             row = json.loads(line)
+            if args.filter_instructions and row["instructions"] != args.filter_instructions:
+                continue
             primitive = row["primitive"]
             if len(by_primitive[primitive]) >= args.per_primitive_limit:
                 continue
@@ -64,13 +72,17 @@ def main() -> None:
             break
 
     temperatures = {}
+    if args.merge_into and args.merge_into.is_file():
+        temperatures = Calibrator.load(args.merge_into).temperatures
+        print(f"merging into existing: {temperatures}\n")
     for primitive, records in by_primitive.items():
         before = _nll(records, 1.0)
         temperature = fit_temperature(records)
         after = _nll(records, temperature)
-        temperatures[primitive] = temperature
+        key = f"{args.domain_key}:{primitive}" if args.domain_key else primitive
+        temperatures[key] = temperature
         print(
-            f"{primitive:>8}: n={len(records):<5} T={temperature:.3f}  "
+            f"{key:>22}: n={len(records):<5} T={temperature:.3f}  "
             f"NLL {before:.4f} -> {after:.4f}"
         )
 
