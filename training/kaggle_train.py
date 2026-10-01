@@ -16,12 +16,28 @@ pattern as the HF token. Nothing is printed that shouldn't be.
 from __future__ import annotations
 
 import os
+import sys
 
 # The kaggle client writes kernel logs using the platform default codec,
 # and those logs contain progress-bar glyphs. On Windows that raises
-# UnicodeEncodeError part-way through the download and strands the
-# output, which is how a finished training run looks like a hung one.
-os.environ.setdefault("PYTHONUTF8", "1")
+# UnicodeEncodeError part-way through the download, which is how a
+# finished training run ends up looking like a hung one.
+#
+# Setting PYTHONUTF8 here is not enough on its own: the interpreter reads
+# it at startup, so an in-process assignment changes nothing. Re-exec
+# once with it set, guarded against looping.
+if (
+    sys.stdout.encoding
+    and sys.stdout.encoding.lower().replace("-", "") != "utf8"
+    and not os.environ.get("_SYS1_UTF8_REEXEC")
+):
+    # subprocess, not os.execv: on Windows execv re-parses its arguments
+    # and mangles any path containing a space, which this project's own
+    # checkout does.
+    import subprocess
+
+    env = {**os.environ, "PYTHONUTF8": "1", "_SYS1_UTF8_REEXEC": "1"}
+    sys.exit(subprocess.run([sys.executable, *sys.argv], env=env).returncode)
 
 import argparse
 import json
