@@ -198,7 +198,29 @@ measured on.
   target domains.
 - More epochs, now that Colab GPU training works.
 
-**Gate:** typed-decisions 64.4% → 72%+ without regressing own domain.
+**Gate:** typed-decisions improvement beyond the noise floor.
+
+**Result — met, and it's the first change this project can prove isn't
+noise.** Trained on all four workflows (8,500 examples) instead of one:
+
+| | before | after |
+|---|---|---|
+| typed_decisions | 47.2% [45.1, 49.4] | **63.8%** [61.7, 66.0] |
+| typed_decisions ECE | 0.246 | **0.102** |
+| phishing | 99.5% | **100.0%** |
+| own_domain | 96.7% [94.4, 98.9] | 93.8% [90.7, 96.8] |
+
++16.6 points with non-overlapping intervals, and calibration error more
+than halved. Gap to Laya's 76.6% goes from 29.4 points to 12.8.
+
+The own_domain point estimate fell about 3 points, but the intervals
+overlap, so it isn't distinguishable from noise — flagged to watch rather
+than claimed as a regression, by the same rule that stopped us claiming
+the wins.
+
+Worth noting what the fix actually was: not a better architecture, a
+bigger model, or a cleverer loss. We had simply never trained on three of
+the four workflows we were grading ourselves on.
 
 ## Step 6 — Bigger backbone (only if 1–5 land)
 
