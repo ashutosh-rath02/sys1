@@ -109,8 +109,25 @@ def main() -> None:
         if "already" not in str(exc).lower():
             raise
         api.dataset_create_version(str(data_dir), version_notes="update", quiet=True, dir_mode="skip")
+    # A fixed sleep here is a guess, and guessing wrong is silent: the
+    # kernel pins whatever dataset version exists at push time, so pushing
+    # early means it runs against stale files and fails with a confusing
+    # "no such file". Poll until every file we uploaded is actually listed.
+    expected = {args.script.name} | {f.name for f in args.data}
     print("waiting for the dataset to finish processing ...", flush=True)
-    time.sleep(25)
+    for attempt in range(40):
+        time.sleep(15)
+        try:
+            listed = {f.name for f in api.dataset_list_files(dataset_id).files}
+        except Exception:
+            continue
+        missing = expected - listed
+        if not missing:
+            print(f"  dataset ready ({len(listed)} files)", flush=True)
+            break
+        print(f"  still processing, missing {sorted(missing)}", flush=True)
+    else:
+        raise TimeoutError(f"dataset {dataset_id} never finished processing")
 
     kernel_dir = staging / "kernel"
     kernel_dir.mkdir(parents=True, exist_ok=True)
