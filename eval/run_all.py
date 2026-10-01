@@ -105,7 +105,9 @@ def bench_typed_decisions(engine, limit: int, calibrator=None, config: str = "al
         for key, q in questions.items():
             if key not in gold_all:
                 continue
-            qtype, criteria = q["type"], q["criteria"]
+            # noul questions carry no criteria in some workflows -- it's
+            # only meaningful for choice (option keys) and score (levels).
+            qtype, criteria = q["type"], q.get("criteria")
             gold = gold_all[key]["label"]
 
             start = time.perf_counter()
