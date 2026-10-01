@@ -234,6 +234,27 @@ pays the cost.
 
 **Gate:** typed-decisions improvement beyond the noise floor (see below).
 
+**Result — met, and it closed most of the remaining gap.** Swapped
+`all-MiniLM-L6-v2` (22.7M) for `jhu-clsp/ettin-encoder-68m` (68M, hidden
+512, 19 layers, 8k context), everything else identical:
+
+| | MiniLM 22.7M | Ettin 68M |
+|---|---|---|
+| typed_decisions | 63.8% [61.7, 66.0] | **73.4%** [71.4, 75.3] |
+| own_domain | 93.8% | **97.5%** |
+| phishing | 100.0% | 100.0% |
+| typed ECE | 0.102 | **0.095** |
+
++9.6 points, intervals don't overlap. It also recovered the own-domain
+dip from Step 5, which suggests that was capacity pressure rather than
+the noise we charitably assumed.
+
+**Gap to Laya: 3.2 points (73.4% vs 76.6%), at 68M parameters against
+their 421M.**
+
+Worth noting this is the first time *model* work — rather than fixing
+data or measurement — produced a real gain in this project.
+
 ---
 
 ## Two corrections to how we've been measuring
