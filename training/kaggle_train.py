@@ -226,12 +226,16 @@ def main() -> None:
         if state != last:
             print(f"  status: {state}", flush=True)
             last = state
-        if str(state).lower() in {"complete", "error", "cancelacknowledged"}:
+        # The client returns an enum, so str() gives
+        # "KernelWorkerStatus.COMPLETE" -- exact-matching "complete"
+        # never fires and every run hung until timeout.
+        flat = str(state).lower().rsplit(".", 1)[-1]
+        if flat in {"complete", "error", "cancelacknowledged"}:
             break
     else:
         raise TimeoutError(f"kernel still running after {args.timeout_minutes} minutes")
 
-    if str(last).lower() == "error":
+    if str(last).lower().rsplit(".", 1)[-1] == "error":
         print("\nkernel failed -- pulling its log:", flush=True)
         args.out.mkdir(parents=True, exist_ok=True)
         api.kernels_output(kernel_id, path=str(args.out), quiet=True)
