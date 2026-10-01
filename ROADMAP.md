@@ -159,6 +159,35 @@ Before, on the exact eval half used after (n=300): **58.3% acc, Brier
 0.830, ECE 0.417, recall 18.8%** — statistically identical to the old
 sample, so nothing here is a sampling artifact.
 
+**Result — hypothesis confirmed, emphatically.** Trained on the `core`
+train half (Kaggle GPU), scored on the held-out half:
+
+| phishing | before | after |
+|---|---|---|
+| accuracy | 57.5% [50.6, 64.4] | **99.5%** [98.5, 100.0] |
+| recall | 17.5% | **99.0%** |
+| ECE | 0.426 | **0.005** |
+| Brier | 0.846 | **0.006** |
+
+Nothing else moved: own_domain 96.3 → 96.7%, typed_decisions 46.6 →
+47.2%, both inside their intervals.
+
+So phishing was never a capacity problem, a calibration problem, or an
+architecture problem. The model could always learn this task; it had
+simply never been shown the right distribution. Worth remembering the
+order we discovered that in — we spent Step 2 trying to calibrate our way
+out of it, and the calibration fit itself (running to T=0.010 on data the
+model scored 100% on) is what finally pointed at the real cause.
+
+Two things keep this honest:
+
+- A regex scores 95.3% here. Beating it by four points is a smaller
+  achievement than "99.5%" sounds.
+- It is a fitted in-distribution number, not zero-shot. That is roughly
+  Jev's condition for its published 95.0% (five sub-questions with
+  weights fit on ~1,000 in-distribution labels), but it is not the same
+  thing as generalising to unseen phishing.
+
 ## Step 5 — Training recipe
 
 v3 added 16k examples and got *worse* everywhere — same 6 epochs spread
