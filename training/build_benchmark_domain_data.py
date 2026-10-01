@@ -25,14 +25,23 @@ OUT_PATH = Path("data/benchmark_domain_examples.jsonl")
 
 
 def build_typed_decisions_examples() -> list[dict]:
-    ds = load_dataset("LocalLLaMA/typed-decisions", "agent_trace_observability", split="train")
+    # All four workflows, not just agent-trace. Training on one and
+    # evaluating across four made our score look 16 points better than it
+    # was (62.6% in-distribution vs 46.6% across the set), and Laya's
+    # published number comes from a checkpoint fitted to all four -- so
+    # one workflow was never the comparable thing to train on either.
+    ds = load_dataset("LocalLLaMA/typed-decisions", "all", split="train")
     rows = []
     for row in ds:
         state = json.loads(row["state"])
         questions = json.loads(row["questions"])
+        gold_all = json.loads(row["gold"])
         for key, q in questions.items():
-            instructions, criteria, qtype = q["instructions"], q["criteria"], q["type"]
-            label = row[f"{key}__label"]
+            if key not in gold_all:
+                continue
+            # criteria is absent on noul questions in some workflows
+            instructions, criteria, qtype = q["instructions"], q.get("criteria"), q["type"]
+            label = gold_all[key]["label"]
             if qtype == "choice":
                 rows.append(
                     {
