@@ -113,10 +113,18 @@ def bench_typed_decisions(engine, limit: int, calibrator=None) -> ScoreAccumulat
 
 
 def bench_phishing(engine, limit: int, seed: int = 0, calibrator=None) -> ScoreAccumulator:
+    """Scores the second half of `core` only.
+
+    training/build_phishing_core_split.py takes the first half of the same
+    deterministic shuffle as training data, so these two must stay in
+    lockstep -- change the seed or the split point in one and you silently
+    start training on what you score against."""
     acc = ScoreAccumulator()
-    ds = load_dataset("AreLit/PhishNChips", "emails", split="core")
+    ds = load_dataset("AreLit/PhishNChips", "emails", split="core").shuffle(seed=seed)
+    half = len(ds) // 2
+    ds = ds.select(range(half, len(ds)))
     if limit:
-        ds = ds.shuffle(seed=seed).select(range(min(limit, len(ds))))
+        ds = ds.select(range(min(limit, len(ds))))
 
     tp = fn = 0
     for row in ds:

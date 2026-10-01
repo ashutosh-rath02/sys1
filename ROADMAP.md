@@ -109,6 +109,29 @@ a GitHub Pages link) looks nothing like our training phishing
 
 **Gate:** mismatch confirmed or killed, with numbers either way.
 
+**Confirmed, decisively, while doing Step 2.** Fitting a phishing-specific
+temperature ran straight to the bottom of the search range because the
+model is *perfect* on phishing training data:
+
+| | accuracy | avg confidence |
+|---|---|---|
+| phishing train-side (non-core splits) | 100.0% | 1.000 |
+| phishing eval (`core`) | 58.3% | — (recall 18.8%) |
+
+It separated `real_phishing_validation` from `cross_domain_legitimate_v5`
+on some superficial cue and learned nothing that transfers. That 58% was
+never measuring model capacity on phishing — it was measuring how badly
+the training sources mismatched the eval set.
+
+Fix in progress: `core` split 1000/1000 by a deterministic shuffle
+(`training/build_phishing_core_split.py` takes the first half,
+`eval/run_all.py` scores the second). Train split is balanced — 502
+phishing, 498 legitimate.
+
+Before, on the exact eval half used after (n=300): **58.3% acc, Brier
+0.830, ECE 0.417, recall 18.8%** — statistically identical to the old
+sample, so nothing here is a sampling artifact.
+
 ## Step 5 — Training recipe
 
 v3 added 16k examples and got *worse* everywhere — same 6 epochs spread

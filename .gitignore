@@ -12,3 +12,4 @@ data/prepared_calibrated/
 streamlit.log
 scratch/
 *.egg-info/
+.kaggle_staging/
