@@ -11,6 +11,8 @@ Three metrics, because they answer different questions:
 """
 from __future__ import annotations
 
+import math
+
 
 class ScoreAccumulator:
     def __init__(self, n_bins: int = 10):
@@ -18,6 +20,7 @@ class ScoreAccumulator:
         self.n = 0
         self.n_correct = 0
         self.brier_total = 0.0
+        self._nll_total = 0.0
         self.latency_total = 0.0
         # (confidence, was_correct) per prediction, for ECE
         self.records: list[tuple[float, bool]] = []
@@ -32,6 +35,7 @@ class ScoreAccumulator:
         self.brier_total += sum(
             (p - (1.0 if label == answer else 0.0)) ** 2 for label, p in probs.items()
         )
+        self._nll_total -= math.log(max(probs.get(answer, 0.0), 1e-12))
         self.records.append((probs[predicted], correct))
         return correct
 
@@ -67,11 +71,38 @@ class ScoreAccumulator:
     def avg_latency_ms(self) -> float:
         return (self.latency_total / self.n * 1000) if self.n else 0.0
 
+    def accuracy_ci(self, confidence: float = 0.95) -> tuple[float, float]:
+        """Normal-approximation interval on accuracy.
+
+        Here because we spent a while reading differences as results that
+        were inside the noise: at n=500 the half-width is about 4 points,
+        which is wider than most changes we were celebrating. Every
+        comparison should carry one of these.
+        """
+        if self.n == 0:
+            return (0.0, 0.0)
+        z = 1.96 if confidence == 0.95 else 2.576
+        p = self.accuracy
+        half = z * math.sqrt(max(p * (1 - p), 1e-12) / self.n)
+        return (max(0.0, p - half), min(1.0, p + half))
+
+    @property
+    def nll(self) -> float:
+        """Mean negative log-likelihood of the true label. Worth reporting
+        because it's what temperature is fit on -- optimising one number
+        and reporting another invites confusion."""
+        if not self.records:
+            return 0.0
+        return self._nll_total / self.n
+
     def summary(self) -> dict:
+        lo, hi = self.accuracy_ci()
         return {
             "n": self.n,
             "accuracy": self.accuracy,
+            "accuracy_ci": [lo, hi],
             "brier": self.brier,
             "ece": self.ece,
+            "nll": self.nll,
             "latency_ms": self.avg_latency_ms,
         }

@@ -25,7 +25,6 @@ from sys1.engine import Engine  # noqa: E402
 from sys1.calibration import Calibrator  # noqa: E402
 from sys1.fast_engine import FastEngine  # noqa: E402
 
-SUBDECISIONS = ["outcome", "action", "needs_review", "risk", "urgency"]
 PHISHING_INSTRUCTIONS = "Is this email a phishing attempt?"
 
 # Note on typed-decisions Brier: eval/benchmark_typed_decisions.py scores
@@ -81,19 +80,33 @@ def bench_own_domain(engine, path: Path, calibrator=None) -> ScoreAccumulator:
     return acc
 
 
-def bench_typed_decisions(engine, limit: int, calibrator=None) -> ScoreAccumulator:
+def bench_typed_decisions(engine, limit: int, calibrator=None, config: str = "all") -> ScoreAccumulator:
+    """All four workflows by default, not just agent-trace.
+
+    Two reasons. The sample: one workflow gives 500 decisions, where the
+    95% interval on accuracy is about +/-4 points -- wider than most
+    changes worth making. Four gives 2,000 and roughly halves that. And
+    comparability: Laya's published 76.6% is across four workflows, so a
+    single-workflow number was never the same measurement.
+
+    Question keys differ per workflow (agent-trace asks about outcome and
+    risk, customer-service about category and churn), so nothing here may
+    assume a fixed set -- labels come from each row's own `gold`.
+    """
     acc = ScoreAccumulator()
-    ds = load_dataset("LocalLLaMA/typed-decisions", "agent_trace_observability", split="test")
+    ds = load_dataset("LocalLLaMA/typed-decisions", config, split="test")
     if limit:
         ds = ds.select(range(min(limit, len(ds))))
 
     for row in ds:
         state = json.loads(row["state"])
         questions = json.loads(row["questions"])
-        for key in SUBDECISIONS:
-            q = questions[key]
+        gold_all = json.loads(row["gold"])
+        for key, q in questions.items():
+            if key not in gold_all:
+                continue
             qtype, criteria = q["type"], q["criteria"]
-            gold = row[f"{key}__label"]
+            gold = gold_all[key]["label"]
 
             start = time.perf_counter()
             if qtype == "noul":
@@ -146,8 +159,11 @@ def main() -> None:
     parser.add_argument("--model", required=True)
     parser.add_argument("--engine", choices=["causal", "fast", "dual"], required=True)
     parser.add_argument("--own-domain-file", type=Path, default=Path("data/prepared/val_raw.jsonl"))
-    parser.add_argument("--typed-limit", type=int, default=100)
+    parser.add_argument("--typed-limit", type=int, default=0,
+                        help="0 = all 400 cases across four workflows")
     parser.add_argument("--phishing-limit", type=int, default=200)
+    parser.add_argument("--typed-config", default="all",
+                        help="a single workflow name narrows it; 'all' is the comparable number")
     parser.add_argument("--json-out", type=Path, default=None)
     parser.add_argument("--calibration", type=Path, default=None,
                         help="calibration.json from eval/fit_calibration.py")
@@ -162,17 +178,19 @@ def main() -> None:
     print("running own-domain...", flush=True)
     results["own_domain"] = bench_own_domain(engine, args.own_domain_file, calibrator)
     print("running typed-decisions...", flush=True)
-    results["typed_decisions"] = bench_typed_decisions(engine, args.typed_limit, calibrator)
+    results["typed_decisions"] = bench_typed_decisions(engine, args.typed_limit, calibrator, args.typed_config)
     print("running phishing...", flush=True)
     results["phishing"] = bench_phishing(engine, args.phishing_limit, calibrator=calibrator)
 
     print(f"\n=== {args.engine} engine · {args.model} ===")
-    print(f"{'benchmark':<18} {'n':>5} {'acc':>8} {'brier':>8} {'ECE':>8} {'ms':>8}")
+    print(f"{'benchmark':<18} {'n':>5} {'acc':>8} {'95% CI':>16} {'brier':>8} {'ECE':>8} {'NLL':>7} {'ms':>7}")
     for name, acc in results.items():
         s = acc.summary()
+        lo, hi = s["accuracy_ci"]
         print(
-            f"{name:<18} {s['n']:>5} {s['accuracy']:>7.1%} {s['brier']:>8.3f} "
-            f"{s['ece']:>8.3f} {s['latency_ms']:>8.1f}"
+            f"{name:<18} {s['n']:>5} {s['accuracy']:>7.1%} "
+            f"{f'[{lo:.1%}, {hi:.1%}]':>16} {s['brier']:>8.3f} "
+            f"{s['ece']:>8.3f} {s['nll']:>7.3f} {s['latency_ms']:>7.1f}"
         )
     recall = getattr(results["phishing"], "recall", None)
     if recall is not None:
