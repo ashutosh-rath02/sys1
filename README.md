@@ -90,7 +90,7 @@ Measured on one CPU laptop, no GPU:
 | | v1/v2 (causal LM) | v3 (fast encoder) |
 |---|---|---|
 | Latency per decision | ~2.3s | **34.6ms** |
-| Accuracy (own held-out eval) | 85.9% | **87.1%** → **91.3%** after domain training |
+| Accuracy (own held-out eval) | 85.9% | **96.3%** (v4 dual-encoder) |
 | Brier score | 0.21 | 0.18 → 0.12 |
 
 ## Progress: the honest version
@@ -117,8 +117,28 @@ things worse:
    but calibration got *worse* even as accuracy improved. That overconfidence
    problem is the current open issue, not a new dataset.
 
-See `eval/benchmark_typed_decisions.py` and `eval/benchmark_phishing.py` to
-reproduce the public-benchmark numbers yourself.
+6. **The phishing benchmark turned out to be mostly mechanical.** Before
+   building on that number, we measured what code alone scores on it:
+   five string-comparison features (webmail sender, free-hosting link,
+   sender/link domain mismatch, bare IP, plain http) plus logistic
+   regression reach **95.3% accuracy at ECE 0.098** — and the single
+   boolean *"is the sender webmail?"* reaches **94.5%** by itself. Jev's
+   published figure on the same benchmark is 95.0%.
+
+   So no model number on this benchmark — ours at 58.3%, or anyone
+   else's — is measuring semantic phishing understanding. The regex
+   baseline now sits permanently on our scoreboard, because quoting a
+   model score here without it is misleading. Reproduce with
+   `python eval/phishing_signal_baseline.py`.
+
+Run `python eval/run_all.py --model <path> --engine <type>` for the full
+scoreboard (accuracy, Brier, ECE, latency across all three benchmarks).
+
+**On comparing to published numbers:** our typed-decisions figure is one
+workflow at n=500; Laya's 76.6% is four workflows at n≈2,000 on a
+checkpoint fine-tuned for them. At n=500 the 95% CI here is about ±4
+points, so differences smaller than that aren't results. We'd rather say
+that than quote a tidy comparison that doesn't hold.
 
 ## Training your own
 

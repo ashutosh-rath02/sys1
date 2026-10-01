@@ -81,6 +81,33 @@ what the published work actually does ("after *domain* temperature
 fitting"). `Calibrator` now supports `"<domain>:<primitive>"` keys with
 fallback to the global fit; phishing refit on phishing-only train data.
 
+## The phishing benchmark is mostly mechanical — measured, not argued
+
+Before building anything on top of the phishing number, we checked what
+code alone scores. `eval/phishing_signal_baseline.py` extracts five
+string-comparison features (sender is webmail, link is on free hosting,
+sender/link registered domains differ, bare IP, plain http), fits logistic
+regression on the train half, scores the eval half:
+
+| | accuracy | Brier | ECE | recall |
+|---|---|---|---|---|
+| **regex only, no model** | **95.3%** | 0.077 | 0.098 | 90.6% |
+| sys1 v4 (dual-encoder) | 58.3% | 0.830 | 0.417 | 18.8% |
+
+A single boolean — *is the sender address webmail?* — scores **94.5%** on
+its own. For reference, Jev's published figure on this benchmark is 95.0%.
+
+So the benchmark is close to saturated by surface cues, and nobody's
+number on it (ours included) is measuring semantic phishing
+understanding. Two consequences:
+
+1. The regex baseline stays on the scoreboard permanently. A model number
+   quoted on this benchmark without it next to it is misleading.
+2. The right architecture is the one this project already argues for:
+   code computes what code can determine, the model is spent only on what
+   needs semantics. Feeding these signals as state beats asking a 23M
+   encoder to infer them from prose.
+
 ## Step 3 — Question decomposition
 
 The single biggest available win, and it needs no training. Jev goes
@@ -146,10 +173,31 @@ measured on.
 
 ## Step 6 — Bigger backbone (only if 1–5 land)
 
-MiniLM-L12 or ModernBERT-base (~150M) — still 3x smaller than Laya, but
-6x ours, and trainable on a free Colab GPU.
+`jhu-clsp/ettin-encoder-68m` (MIT, 68M) looks like the best point on the
+curve — reported fine-tune GLUE 87.2 against ModernBERT-base's 88.4 at
+less than half the size — and unlike `all-MiniLM-L6-v2` it ships an MLM
+head, which is what makes continued pretraining on task text possible at
+all. `answerdotai/ModernBERT-base` (Apache-2.0, 149M) if we stay
+dual-encoder, since caching action embeddings means only the state side
+pays the cost.
 
-**Gate:** typed-decisions 76%+ (Laya parity on the metric we can compare).
+**Gate:** typed-decisions improvement beyond the noise floor (see below).
+
+---
+
+## Two corrections to how we've been measuring
+
+**The typed-decisions gate was apples-to-oranges.** Our 62.6% is n=500 on
+*one* workflow (agent-trace-observability). Laya's 76.6% is n≈2,000 across
+*four* workflows on a checkpoint fine-tuned for them. "76%+ = parity" was
+never a like-for-like target and is withdrawn.
+
+**We've been reading noise as signal.** At n=500 the 95% CI on
+typed-decisions accuracy is roughly ±4 points, so v2's 64.4% vs v4's 62.6%
+is indistinguishable — and the own-domain ECE 0.025 → 0.040 that Step 2
+called a regression is likely inside the floor too at n=241. Every
+comparison from here reports an interval, and no change under ~4 points
+counts as a result without multiple seeds.
 
 ---
 
