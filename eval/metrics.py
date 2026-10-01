@@ -1,0 +1,77 @@
+"""Shared scoring for every benchmark, so numbers from different runs are
+actually comparable.
+
+Three metrics, because they answer different questions:
+- accuracy: did the argmax match the label
+- Brier: squared error of the whole predicted distribution
+- ECE: of the times the model said "80% sure", was it right 80% of the
+  time? This is the one the funded models publish (Laya reports 0.466
+  out-of-box, 0.081 after temperature fitting), so it's the one we need
+  to compare against them at all.
+"""
+from __future__ import annotations
+
+
+class ScoreAccumulator:
+    def __init__(self, n_bins: int = 10):
+        self.n_bins = n_bins
+        self.n = 0
+        self.n_correct = 0
+        self.brier_total = 0.0
+        self.latency_total = 0.0
+        # (confidence, was_correct) per prediction, for ECE
+        self.records: list[tuple[float, bool]] = []
+
+    def add(self, probs: dict[str, float], answer: str, latency_s: float = 0.0) -> bool:
+        predicted = max(probs, key=probs.get)
+        correct = predicted == answer
+
+        self.n += 1
+        self.n_correct += correct
+        self.latency_total += latency_s
+        self.brier_total += sum(
+            (p - (1.0 if label == answer else 0.0)) ** 2 for label, p in probs.items()
+        )
+        self.records.append((probs[predicted], correct))
+        return correct
+
+    @property
+    def accuracy(self) -> float:
+        return self.n_correct / self.n if self.n else 0.0
+
+    @property
+    def brier(self) -> float:
+        return self.brier_total / self.n if self.n else 0.0
+
+    @property
+    def ece(self) -> float:
+        """Expected Calibration Error: average gap between stated
+        confidence and observed accuracy, weighted by bin population."""
+        if not self.records:
+            return 0.0
+        bins: list[list[tuple[float, bool]]] = [[] for _ in range(self.n_bins)]
+        for confidence, correct in self.records:
+            idx = min(int(confidence * self.n_bins), self.n_bins - 1)
+            bins[idx].append((confidence, correct))
+
+        total_gap = 0.0
+        for bucket in bins:
+            if not bucket:
+                continue
+            avg_confidence = sum(c for c, _ in bucket) / len(bucket)
+            avg_accuracy = sum(1 for _, ok in bucket if ok) / len(bucket)
+            total_gap += (len(bucket) / len(self.records)) * abs(avg_confidence - avg_accuracy)
+        return total_gap
+
+    @property
+    def avg_latency_ms(self) -> float:
+        return (self.latency_total / self.n * 1000) if self.n else 0.0
+
+    def summary(self) -> dict:
+        return {
+            "n": self.n,
+            "accuracy": self.accuracy,
+            "brier": self.brier,
+            "ece": self.ece,
+            "latency_ms": self.avg_latency_ms,
+        }
