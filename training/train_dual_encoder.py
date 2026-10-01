@@ -142,6 +142,8 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=Path("models/sys1-dual-encoder"))
     parser.add_argument("--epochs", type=int, default=6)
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--backbone", default=BACKBONE,
+                        help="encoder to fine-tune; swap to compare architectures")
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--temperature", type=float, default=0.07, help="InfoNCE temperature")
     parser.add_argument("--val-fraction", type=float, default=0.15)
@@ -162,8 +164,9 @@ def main() -> None:
     val_examples, train_examples = examples[:n_val], examples[n_val:]
     print(f"train={len(train_examples)} val={len(val_examples)}")
 
-    tokenizer = AutoTokenizer.from_pretrained(BACKBONE)
-    model = DualEncoder(BACKBONE).to(device)
+    print(f"backbone: {args.backbone}")
+    tokenizer = AutoTokenizer.from_pretrained(args.backbone)
+    model = DualEncoder(args.backbone).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     acc, brier = evaluate(model, tokenizer, val_examples, args.temperature, device, args.batch_size)
@@ -200,7 +203,8 @@ def main() -> None:
     model.backbone.save_pretrained(args.out_dir)
     torch.save(
         {"state_head": model.state_head.state_dict(), "action_head": model.action_head.state_dict(),
-         "embed_dim": EMBED_DIM, "temperature": args.temperature},
+         "embed_dim": EMBED_DIM, "temperature": args.temperature,
+         "backbone": args.backbone},
         args.out_dir / "heads.pt",
     )
     print(f"saved to {args.out_dir}")

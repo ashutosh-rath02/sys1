@@ -125,7 +125,11 @@ def main() -> None:
     parser.add_argument("--data", type=Path, nargs="+", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--slug", default="sys1-train")
-    parser.add_argument("--extra-args", nargs="*", default=[])
+    # One quoted string rather than nargs="*": argparse refuses to treat
+    # values beginning with "-" as positional values, so
+    # `--extra-args --backbone X` fails as an unrecognised option.
+    parser.add_argument("--extra-args", default="",
+                        help='extra flags for the training script, e.g. "--backbone X --batch-size 32"')
     parser.add_argument("--poll-seconds", type=int, default=30)
     parser.add_argument("--timeout-minutes", type=int, default=90)
     args = parser.parse_args()
@@ -177,7 +181,7 @@ def main() -> None:
     kernel_dir = staging / "kernel"
     kernel_dir.mkdir(parents=True, exist_ok=True)
     data_args = "".join('f"{DATA_DIR}/' + f.name + '", ' for f in args.data)
-    extra = "".join(f'"{a}", ' for a in args.extra_args)
+    extra = "".join(f'"{a}", ' for a in args.extra_args.split())
     (kernel_dir / "script.py").write_text(
         KERNEL_TEMPLATE.format(
             dataset_slug=dataset_slug,

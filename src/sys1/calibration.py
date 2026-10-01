@@ -87,6 +87,55 @@ def fit_temperature(
     return best
 
 
+def fit_platt(
+    records: list[tuple[dict[str, float], str]],
+    positive: str = "yes",
+    epochs: int = 600,
+    lr: float = 0.5,
+) -> tuple[float, float]:
+    """Fit (slope, intercept) on the log-odds of a yes/no judgment.
+
+    Temperature can only sharpen or soften a distribution -- it rescales
+    every score by the same factor, so it cannot move a model that is
+    systematically biased toward one answer. That was precisely our
+    failure: 17% recall meant the model answered "no" to almost
+    everything, and no temperature could have fixed it.
+
+    Platt adds the intercept that can. Returns (a, b) for
+    p' = sigmoid(a * logit(p) + b).
+    """
+    if not records:
+        return (1.0, 0.0)
+
+    xs, ys = [], []
+    for probs, answer in records:
+        p = min(max(probs.get(positive, 0.0), _EPS), 1 - _EPS)
+        xs.append(math.log(p / (1 - p)))
+        ys.append(1.0 if answer == positive else 0.0)
+
+    a, b = 1.0, 0.0
+    n = len(xs)
+    for _ in range(epochs):
+        grad_a = grad_b = 0.0
+        for x, y in zip(xs, ys):
+            z = a * x + b
+            pred = 1.0 / (1.0 + math.exp(-z)) if z >= 0 else math.exp(z) / (1.0 + math.exp(z))
+            err = pred - y
+            grad_a += err * x
+            grad_b += err
+        a -= lr * grad_a / n
+        b -= lr * grad_b / n
+    return (a, b)
+
+
+def apply_platt(probs: dict[str, float], a: float, b: float, positive: str = "yes") -> dict[str, float]:
+    p = min(max(probs.get(positive, 0.0), _EPS), 1 - _EPS)
+    z = a * math.log(p / (1 - p)) + b
+    p_new = 1.0 / (1.0 + math.exp(-z)) if z >= 0 else math.exp(z) / (1.0 + math.exp(z))
+    negative = next((k for k in probs if k != positive), "no")
+    return {positive: p_new, negative: 1.0 - p_new}
+
+
 class Calibrator:
     """Temperatures fit once and reused at inference.
 
